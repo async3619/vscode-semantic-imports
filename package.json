@@ -20,6 +20,21 @@
     "onLanguage:typescriptreact"
   ],
   "main": "./dist/extension.js",
+  "contributes": {
+    "semanticTokenTypes": [
+      {
+        "id": "importedSymbol",
+        "description": "A symbol that was imported from another module"
+      }
+    ],
+    "configurationDefaults": {
+      "editor.semanticTokenColorCustomizations": {
+        "rules": {
+          "importedSymbol": "#000000"
+        }
+      }
+    }
+  },
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
