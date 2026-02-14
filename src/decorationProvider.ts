@@ -17,6 +17,8 @@ const KIND_COLORS: Record<string, string> = {
 
 const DEFAULT_COLOR = '#000000'
 
+const output = vscode.window.createOutputChannel('Semantic Imports')
+
 const decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
 
 function getDecorationType(color: string): vscode.TextEditorDecorationType {
@@ -26,6 +28,12 @@ function getDecorationType(color: string): vscode.TextEditorDecorationType {
     decorationTypes.set(color, type)
   }
   return type
+}
+
+function extractContentText(content: vscode.MarkedString | vscode.MarkdownString): string {
+  if (content instanceof vscode.MarkdownString) return content.value
+  if (typeof content === 'string') return content
+  return content.value
 }
 
 async function resolveSymbolKind(
@@ -42,7 +50,8 @@ async function resolveSymbolKind(
 
   for (const hover of hovers) {
     for (const content of hover.contents) {
-      const text = content instanceof vscode.MarkdownString ? content.value : String(content)
+      const text = extractContentText(content)
+      output.appendLine(`[hover] ${position.line}:${position.character} → ${text.slice(0, 200)}`)
       const match = text.match(/\(alias\)\s+(function|class|interface|type|enum|namespace|const|let|var|module)\b/)
       if (match) return match[1]
     }
