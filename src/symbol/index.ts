@@ -1,1 +1,2 @@
-export { SymbolResolver } from './resolver'
+export { SymbolKind, BaseSymbolResolver } from './types'
+export { HoverSymbolResolver, SemanticTokenSymbolResolver, QuickInfoSymbolResolver } from './resolvers'

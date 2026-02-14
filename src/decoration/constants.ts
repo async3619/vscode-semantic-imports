@@ -1,13 +1,15 @@
+import { SymbolKind } from '../symbol'
+
 // Colors from VS Code Light theme
 // Keys match TypeScript semantic token types
-export const KIND_COLORS: Record<string, string> = {
-  function: '#800000',
-  class: '#008080',
-  interface: '#008080',
-  type: '#008080',
-  enum: '#008080',
-  namespace: '#008080',
-  variable: '#000080',
+export const KIND_COLORS: Record<SymbolKind, string> = {
+  [SymbolKind.Function]: '#800000',
+  [SymbolKind.Class]: '#008080',
+  [SymbolKind.Interface]: '#008080',
+  [SymbolKind.Type]: '#008080',
+  [SymbolKind.Enum]: '#008080',
+  [SymbolKind.Namespace]: '#008080',
+  [SymbolKind.Variable]: '#000080',
 }
 
 export const DEFAULT_COLOR = '#000000'
