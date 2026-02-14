@@ -44,8 +44,11 @@ export class ThemeColorResolver {
       const merged = { ...colors, ...userOverrides }
       this.output.appendLine(`[theme] merged colors: ${JSON.stringify(merged)}`)
       return merged
-    } catch {
+    } catch (error: unknown) {
       this.output.appendLine('[theme] unexpected error loading colors')
+      if (error instanceof Error) {
+        this.output.appendLine(`[theme] ${error.message}`)
+      }
       return {}
     }
   }

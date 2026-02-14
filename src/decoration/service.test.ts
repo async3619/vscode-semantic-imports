@@ -460,10 +460,10 @@ describe('DecorationService', () => {
       expect(internals(service).documentCaches.size).toBe(0)
     })
 
-    it('should dispose the output channel', () => {
+    it('should not dispose the output channel (owned by extension)', () => {
       service.dispose()
 
-      expect(output.dispose).toHaveBeenCalledOnce()
+      expect(output.dispose).not.toHaveBeenCalled()
     })
 
     it('should handle empty state gracefully', () => {

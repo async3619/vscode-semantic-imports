@@ -147,7 +147,6 @@ export class DecorationService implements vscode.Disposable {
     }
     this.decorationTypes.clear()
     this.documentCaches.clear()
-    this.output.dispose()
   }
 
   private getDecorationType(color: string) {

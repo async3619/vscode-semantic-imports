@@ -45,6 +45,14 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.extensions.onDidChange(() => {
       refreshColors()
     }),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (
+        e.affectsConfiguration('editor.semanticTokenColorCustomizations') ||
+        e.affectsConfiguration('editor.tokenColorCustomizations')
+      ) {
+        refreshColors()
+      }
+    }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor && isSupported(editor.document)) {
         triggerDecoration(editor)
