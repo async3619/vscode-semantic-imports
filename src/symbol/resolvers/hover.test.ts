@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
+import { TsServerLoadingError } from '../errors'
 import { HoverSymbolResolver } from './hover'
 import { SymbolKind } from '../types'
 
@@ -139,5 +140,31 @@ describe('HoverSymbolResolver', () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([{ contents: ['(alias) const X: number'] }])
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBe(SymbolKind.Variable)
+  })
+
+  describe('tsserver loading detection', () => {
+    it('should throw TsServerLoadingError when hover text contains loading', async () => {
+      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('loading...')] },
+      ])
+      await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
+    })
+
+    it('should throw TsServerLoadingError when hover text contains loading in markdown', async () => {
+      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(loading...)')] },
+      ])
+      await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
+    })
+
+    it('should log loading detection to output channel', async () => {
+      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('loading...')] },
+      ])
+      await resolver.resolve(createMockDocument(), createMockPosition(2, 5)).catch(() => {})
+      expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(
+        expect.stringContaining('[hover] loading detected'),
+      )
+    })
   })
 })
