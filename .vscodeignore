@@ -1,0 +1,17 @@
+.vscode/**
+src/**
+node_modules/**
+coverage/**
+.vscode-test/**
+.gitignore
+.husky/**
+*.vsix
+commitlint.config.ts
+CLAUDE.md
+tsconfig.json
+vitest.config.ts
+esbuild.mjs
+eslint.config.mjs
+.prettierrc
+**/*.test.ts
+**/*.map
