@@ -94,10 +94,14 @@ export async function applyImportDecorations(editor: vscode.TextEditor): Promise
 
   await Promise.all(
     uniqueSymbols.map(async (symbol) => {
-      const occurrence = occurrences.find((o) => o.symbol === symbol)
-      if (!occurrence) return
-      const kind = await resolveSymbolKind(document, occurrence.range.start)
-      if (kind) symbolKinds.set(symbol, kind)
+      try {
+        const occurrence = occurrences.find((o) => o.symbol === symbol)
+        if (!occurrence) return
+        const kind = await resolveSymbolKind(document, occurrence.range.start)
+        if (kind) symbolKinds.set(symbol, kind)
+      } catch {
+        // Hover provider may fail for this symbol; fall back to default color
+      }
     }),
   )
 
