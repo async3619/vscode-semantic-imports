@@ -5,6 +5,7 @@
   "version": "0.0.1",
   "publisher": "async3619",
   "license": "MIT",
+  "packageManager": "pnpm@10.29.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/async3619/vscode-semantic-imports"
