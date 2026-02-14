@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import { applyImportDecorations, clearDocumentCache, disposeDecorations } from './decorationProvider'
+import { applyImportDecorations, clearDocumentCache, disposeDecorations } from './decoration'
 
 const SUPPORTED_LANGUAGES = new Set(['typescript', 'typescriptreact'])
 
