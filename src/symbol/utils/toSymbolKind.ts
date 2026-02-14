@@ -1,6 +1,6 @@
 import { SymbolKind } from '../types'
 
-const SYMBOL_KIND_MAP: Record<string, SymbolKind> = {
+const SYMBOL_KIND_MAP: Partial<Record<string, SymbolKind>> = {
   function: SymbolKind.Function,
   class: SymbolKind.Class,
   interface: SymbolKind.Interface,

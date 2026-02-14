@@ -64,6 +64,7 @@ describe('SemanticTokenSymbolResolver', () => {
   beforeEach(() => {
     resolver = new SemanticTokenSymbolResolver(vscode.window.createOutputChannel('test'))
     vi.mocked(vscode.commands.executeCommand).mockReset()
+    vi.mocked(vscode.workspace.openTextDocument).mockClear()
   })
 
   it('should return undefined when definition provider returns null', async () => {
