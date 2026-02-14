@@ -10,7 +10,7 @@ const eslintConfig = defineConfig([
       parser: tsparser,
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['src/*.test.ts'],
+          allowDefaultProject: ['src/*.test.ts', 'src/decoration/*.test.ts', 'src/utils/*.test.ts'],
         },
       },
     },
