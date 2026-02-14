@@ -3,6 +3,7 @@ import * as vscode from 'vscode'
 import { DecorationService } from './service'
 import { DEFAULT_COLOR, KIND_COLORS } from './constants'
 import type { DocumentCache } from './types'
+import type { SymbolResolver } from '../symbol'
 
 vi.mock('../importParser', () => ({
   parseImports: vi.fn(),
@@ -12,10 +13,10 @@ import { parseImports } from '../importParser'
 
 type ServiceInternals = {
   output: vscode.OutputChannel
+  symbolResolver: SymbolResolver
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
   documentCaches: Map<string, DocumentCache>
   getDecorationType: (color: string) => vscode.TextEditorDecorationType
-  resolveSymbolKind: (document: vscode.TextDocument, position: vscode.Position) => Promise<string | undefined>
 }
 
 function internals(service: DecorationService): ServiceInternals {
@@ -34,16 +35,6 @@ function createMockEditor(lines: string[]): vscode.TextEditor {
   } as unknown as vscode.TextEditor
 }
 
-function createMockDocument(uri = 'file:///test.ts'): vscode.TextDocument {
-  return {
-    uri: vscode.Uri.parse(uri),
-  } as unknown as vscode.TextDocument
-}
-
-function createMockPosition(line = 0, character = 0): vscode.Position {
-  return new vscode.Position(line, character)
-}
-
 describe('DecorationService', () => {
   let service: DecorationService
 
@@ -52,6 +43,12 @@ describe('DecorationService', () => {
     vi.mocked(parseImports).mockReset()
     vi.mocked(vscode.commands.executeCommand).mockReset()
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
+
+    // Explicitly stub all resolver methods to undefined by default.
+    // Tests that need a specific strategy to return a value will override the relevant spy.
+    vi.spyOn(internals(service).symbolResolver, 'resolveByHover').mockResolvedValue(undefined)
+    vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue(undefined)
+    vi.spyOn(internals(service).symbolResolver, 'resolveByQuickInfo').mockResolvedValue(undefined)
   })
 
   describe('applyImportDecorations', () => {
@@ -80,7 +77,7 @@ describe('DecorationService', () => {
 
       it('should find symbol occurrences and apply decorations', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -95,7 +92,7 @@ describe('DecorationService', () => {
     describe('symbol occurrence regex', () => {
       it('should exclude the module specifier part after from', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['react', 'useState'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        const spy = vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -106,7 +103,7 @@ describe('DecorationService', () => {
 
       it('should escape special regex characters in symbol names without throwing', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['$special'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('const')
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('variable')
 
         const editor = createMockEditor(["import { $special } from 'mod'"])
 
@@ -116,7 +113,7 @@ describe('DecorationService', () => {
 
       it('should find same symbol on multiple lines', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['Foo'], importEndLine: 2 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('class')
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('class')
 
         const editor = createMockEditor(["import { Foo } from 'a'", "import { Foo } from 'b'"])
         await service.applyImportDecorations(editor)
@@ -130,7 +127,7 @@ describe('DecorationService', () => {
 
       it('should use word boundary matching', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['use'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor(["import { use, useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -144,9 +141,9 @@ describe('DecorationService', () => {
     })
 
     describe('symbol kind resolution', () => {
-      it('should call resolveSymbolKind for each unique symbol', async () => {
+      it('should call resolveBySemanticToken for each unique symbol', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState', 'useEffect'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        const spy = vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor(["import { useState, useEffect } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -154,9 +151,9 @@ describe('DecorationService', () => {
         expect(spy).toHaveBeenCalledTimes(2)
       })
 
-      it('should use DEFAULT_COLOR when resolveSymbolKind returns undefined', async () => {
+      it('should use DEFAULT_COLOR when resolver returns undefined', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['unknown'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue(undefined)
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue(undefined)
 
         const editor = createMockEditor(["import { unknown } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -164,9 +161,11 @@ describe('DecorationService', () => {
         expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({ color: DEFAULT_COLOR })
       })
 
-      it('should use DEFAULT_COLOR when resolveSymbolKind throws', async () => {
+      it('should use DEFAULT_COLOR when resolver throws', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['failing'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockRejectedValue(new Error('hover failed'))
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockRejectedValue(
+          new Error('resolution failed'),
+        )
 
         const editor = createMockEditor(["import { failing } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -179,7 +178,7 @@ describe('DecorationService', () => {
     describe('color mapping', () => {
       it('should map function kind to KIND_COLORS.function', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor(["import { myFn } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -188,19 +187,19 @@ describe('DecorationService', () => {
       })
 
       it('should use DEFAULT_COLOR for unknown kind not in KIND_COLORS', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['myVar'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('var')
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['myMethod'], importEndLine: 1 })
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('method')
 
-        const editor = createMockEditor(["import { myVar } from 'mod'"])
+        const editor = createMockEditor(["import { myMethod } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        // 'var' is not in KIND_COLORS, so DEFAULT_COLOR is used
+        // 'method' is not in KIND_COLORS, so DEFAULT_COLOR is used
         expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({ color: DEFAULT_COLOR })
       })
 
       it('should group symbols with same color into a single setDecorations call', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['ClassA', 'ClassB'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('class')
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('class')
 
         const editor = createMockEditor(["import { ClassA, ClassB } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -212,7 +211,7 @@ describe('DecorationService', () => {
 
       it('should create separate setDecorations calls for different colors', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockImplementation(async (_doc, pos) => {
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockImplementation(async (_doc, pos) => {
           // myFn at char 9, MyClass at char 15
           return pos.character < 14 ? 'function' : 'class'
         })
@@ -230,7 +229,7 @@ describe('DecorationService', () => {
     describe('caching', () => {
       it('should store resolved kinds in documentCaches', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -250,7 +249,7 @@ describe('DecorationService', () => {
         })
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service), 'resolveSymbolKind')
+        const spy = vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken')
 
         const editor = createMockEditor([importLine])
         await service.applyImportDecorations(editor)
@@ -268,7 +267,7 @@ describe('DecorationService', () => {
         })
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useEffect'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        const spy = vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor(["import { useEffect } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -286,7 +285,7 @@ describe('DecorationService', () => {
         })
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState', 'useEffect'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        const spy = vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor([importText])
         await service.applyImportDecorations(editor)
@@ -306,7 +305,7 @@ describe('DecorationService', () => {
         })
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState', 'useEffect'], importEndLine: 1 })
-        vi.spyOn(internals(service), 'resolveSymbolKind').mockResolvedValue('function')
+        vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue('function')
 
         const editor = createMockEditor([importText])
         await service.applyImportDecorations(editor)
@@ -420,95 +419,6 @@ describe('DecorationService', () => {
       const result = internals(service).getDecorationType('#ff0000')
 
       expect(internals(service).decorationTypes.get('#ff0000')).toBe(result)
-    })
-  })
-
-  describe('resolveSymbolKind', () => {
-    it('should return undefined when hover result is null', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null)
-      const result = await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition())
-      expect(result).toBeUndefined()
-    })
-
-    it('should return undefined when hover result is empty array', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
-      const result = await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition())
-      expect(result).toBeUndefined()
-    })
-
-    describe('alias kind extraction', () => {
-      const kinds = ['function', 'class', 'interface', 'type', 'enum', 'namespace', 'const', 'let', 'var', 'module']
-
-      for (const kind of kinds) {
-        it(`should extract "${kind}" from alias hover text`, async () => {
-          vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-            { contents: [new vscode.MarkdownString(`(alias) ${kind} Foo`)] },
-          ])
-          const result = await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition())
-          expect(result).toBe(kind)
-        })
-      }
-    })
-
-    it('should return undefined when hover has no alias pattern', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(method) Array<T>.map(...)')] },
-      ])
-      const result = await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition())
-      expect(result).toBeUndefined()
-    })
-
-    it('should check all contents in a hover until finding a match', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        {
-          contents: [new vscode.MarkdownString('no match here'), new vscode.MarkdownString('(alias) class MyClass')],
-        },
-      ])
-      const result = await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition())
-      expect(result).toBe('class')
-    })
-
-    it('should check all hovers until finding a match', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('no match')] },
-        { contents: [new vscode.MarkdownString('(alias) interface IFoo')] },
-      ])
-      const result = await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition())
-      expect(result).toBe('interface')
-    })
-
-    it('should call executeCommand with correct arguments', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
-      const doc = createMockDocument('file:///my-file.ts')
-      const pos = createMockPosition(5, 10)
-
-      await internals(service).resolveSymbolKind(doc, pos)
-
-      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('vscode.executeHoverProvider', doc.uri, pos)
-    })
-
-    it('should log hover content to output channel', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(alias) function foo(): void')] },
-      ])
-
-      await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition(3, 7))
-
-      expect(internals(service).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[hover] 3:7'))
-    })
-
-    it('should handle MarkedString object with language and value', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [{ language: 'typescript', value: '(alias) function foo(): void' }] },
-      ])
-      const result = await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition())
-      expect(result).toBe('function')
-    })
-
-    it('should handle plain string content', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([{ contents: ['(alias) const X: number'] }])
-      const result = await internals(service).resolveSymbolKind(createMockDocument(), createMockPosition())
-      expect(result).toBe('const')
     })
   })
 })

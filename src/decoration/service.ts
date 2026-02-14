@@ -1,16 +1,18 @@
 import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
-import { extractContentText } from '../utils/extractContentText'
+import { SymbolResolver } from '../symbol'
 import { DEFAULT_COLOR, KIND_COLORS } from './constants'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
 export class DecorationService implements vscode.Disposable {
   private readonly output: vscode.OutputChannel
+  private readonly symbolResolver: SymbolResolver
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
 
   constructor() {
     this.output = vscode.window.createOutputChannel('Semantic Imports')
+    this.symbolResolver = new SymbolResolver(this.output)
   }
 
   async applyImportDecorations(editor: vscode.TextEditor): Promise<void> {
@@ -75,10 +77,25 @@ export class DecorationService implements vscode.Disposable {
           try {
             const occurrence = occurrences.find((o) => o.symbol === symbol)
             if (!occurrence) return
-            const kind = await this.resolveSymbolKind(document, occurrence.range.start)
-            if (kind) symbolKinds.set(symbol, kind)
+            const pos = occurrence.range.start
+
+            const resolvers: Array<() => Promise<string | undefined>> = [
+              () => this.symbolResolver.resolveByHover(document, pos),
+              () => this.symbolResolver.resolveBySemanticToken(document, pos),
+              () => this.symbolResolver.resolveByQuickInfo(document, pos),
+            ]
+
+            let kind: string | undefined
+            for (const resolver of resolvers) {
+              kind = await resolver()
+              if (kind) {
+                this.output.appendLine(`[resolved] ${symbol} → ${kind}`)
+                symbolKinds.set(symbol, kind)
+                break
+              }
+            }
           } catch {
-            // Hover provider may fail for this symbol; fall back to default color
+            // Resolution may fail for this symbol; fall back to default color
           }
         }),
       )
@@ -125,29 +142,5 @@ export class DecorationService implements vscode.Disposable {
       this.decorationTypes.set(color, type)
     }
     return type
-  }
-
-  private async resolveSymbolKind(
-    document: vscode.TextDocument,
-    position: vscode.Position,
-  ): Promise<string | undefined> {
-    const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
-      'vscode.executeHoverProvider',
-      document.uri,
-      position,
-    )
-
-    if (!hovers || hovers.length === 0) return undefined
-
-    for (const hover of hovers) {
-      for (const content of hover.contents) {
-        const text = extractContentText(content)
-        this.output.appendLine(`[hover] ${position.line}:${position.character} → ${text.slice(0, 200)}`)
-        const match = text.match(/\(alias\)\s+(function|class|interface|type|enum|namespace|const|let|var|module)\b/)
-        if (match) return match[1]
-      }
-    }
-
-    return undefined
   }
 }
