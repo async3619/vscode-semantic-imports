@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import { applyImportDecorations, disposeDecorations } from './decoration'
+import { applyImportDecorations, clearDocumentCache, disposeDecorations } from './decoration'
 
 const SUPPORTED_LANGUAGES = new Set(['typescript', 'typescriptreact'])
 
@@ -30,6 +30,11 @@ export function activate(context: vscode.ExtensionContext): void {
       const editor = vscode.window.activeTextEditor
       if (editor && editor.document === e.document && isSupported(e.document)) {
         triggerDecoration(editor)
+      }
+    }),
+    vscode.workspace.onDidCloseTextDocument((document) => {
+      if (isSupported(document)) {
+        clearDocumentCache(document.uri.toString())
       }
     }),
   )
