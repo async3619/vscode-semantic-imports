@@ -74,10 +74,14 @@ export async function applyImportDecorations(editor: vscode.TextEditor): Promise
 
   for (let lineIndex = 0; lineIndex < importEndLine; lineIndex++) {
     const lineText = document.lineAt(lineIndex).text
+
+    // Exclude the module specifier part (from '...' / from "...")
+    const fromMatch = lineText.match(/\s+from\s+['"]/)
+    const searchText = fromMatch ? lineText.slice(0, fromMatch.index) : lineText
     let match: RegExpExecArray | null
 
     pattern.lastIndex = 0
-    while ((match = pattern.exec(lineText)) !== null) {
+    while ((match = pattern.exec(searchText)) !== null) {
       const startPos = new vscode.Position(lineIndex, match.index)
       const endPos = new vscode.Position(lineIndex, match.index + match[0].length)
       occurrences.push({ symbol: match[0], range: new vscode.Range(startPos, endPos) })
