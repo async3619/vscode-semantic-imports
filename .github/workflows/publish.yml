@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -24,10 +27,9 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
+          pnpm package
           if [[ "${{ github.ref_name }}" == *-* ]]; then
-            pnpm package
-            vsce publish --no-dependencies --packagePath *.vsix --pre-release
+            pnpm exec vsce publish --no-dependencies --packagePath *.vsix --pre-release
           else
-            pnpm package
-            vsce publish --no-dependencies --packagePath *.vsix
+            pnpm exec vsce publish --no-dependencies --packagePath *.vsix
           fi
