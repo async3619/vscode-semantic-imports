@@ -1,8 +1,13 @@
 import * as vscode from 'vscode'
 import { TsServerLoadingError } from '../errors'
-import { BaseSymbolResolver } from '../types'
+import { SymbolKind, BaseSymbolResolver } from '../types'
 import { extractContentText } from '../utils/extractContentText'
+import { isFunctionType } from '../utils/isFunctionType'
+import { loadTypeScript } from '../utils/loadTypeScript'
 import { toSymbolKind } from '../utils/toSymbolKind'
+
+const VARIABLE_KEYWORDS = new Set(['const', 'let', 'var'])
+const TYPE_EXTRACT_PATTERN = /\(alias\)\s+(?:const|let|var)\s+\S+\s*:\s*(.+)/
 
 export class HoverSymbolResolver extends BaseSymbolResolver {
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
@@ -28,9 +33,35 @@ export class HoverSymbolResolver extends BaseSymbolResolver {
 
         const match = text.match(/\(alias\)\s+(function|class|interface|type|enum|namespace|const|let|var|module)\b/)
         if (match) {
-          return toSymbolKind(match[1])
+          const keyword = match[1]
+          if (VARIABLE_KEYWORDS.has(keyword)) {
+            return this.resolveVariableKind(text)
+          }
+          return toSymbolKind(keyword)
         }
       }
+    }
+
+    return undefined
+  }
+
+  private resolveVariableKind(text: string) {
+    const typeMatch = text.match(TYPE_EXTRACT_PATTERN)
+    if (!typeMatch) {
+      return SymbolKind.Variable
+    }
+
+    const ts = loadTypeScript()
+    if (!ts) {
+      return undefined
+    }
+
+    const result = isFunctionType(ts, typeMatch[1].trim())
+    if (result === true) {
+      return SymbolKind.Function
+    }
+    if (result === false) {
+      return SymbolKind.Variable
     }
 
     return undefined
