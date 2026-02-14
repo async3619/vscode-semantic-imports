@@ -1,25 +1,35 @@
 import * as vscode from 'vscode'
-import { ImportedSymbolTokenProvider, legend } from './semanticTokenProvider'
+import { applyImportDecorations, disposeDecorations } from './decorationProvider'
 
-const selector: vscode.DocumentSelector = [
-  { language: 'typescript', scheme: 'file' },
-  { language: 'typescriptreact', scheme: 'file' },
-]
+const SUPPORTED_LANGUAGES = new Set(['typescript', 'typescriptreact'])
+
+function isSupported(document: vscode.TextDocument): boolean {
+  return document.uri.scheme === 'file' && SUPPORTED_LANGUAGES.has(document.languageId)
+}
 
 export function activate(context: vscode.ExtensionContext): void {
-  const provider = new ImportedSymbolTokenProvider()
-
-  const registration = vscode.languages.registerDocumentSemanticTokensProvider(selector, provider, legend)
-
-  const changeSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
-    if (vscode.languages.match(selector, e.document)) {
-      provider.notifyChanged()
+  // Apply to already visible editors
+  for (const editor of vscode.window.visibleTextEditors) {
+    if (isSupported(editor.document)) {
+      applyImportDecorations(editor)
     }
-  })
+  }
 
-  context.subscriptions.push(registration, changeSubscription, provider)
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor && isSupported(editor.document)) {
+        applyImportDecorations(editor)
+      }
+    }),
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      const editor = vscode.window.activeTextEditor
+      if (editor && editor.document === e.document && isSupported(e.document)) {
+        applyImportDecorations(editor)
+      }
+    }),
+  )
 }
 
 export function deactivate(): void {
-  // cleanup handled by disposables
+  disposeDecorations()
 }
