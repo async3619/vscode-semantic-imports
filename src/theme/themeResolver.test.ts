@@ -23,6 +23,32 @@ function mockReadFile(pathToContent: Record<string, string>) {
   })
 }
 
+function mockConfiguration(options: {
+  colorTheme?: string
+  semanticTokenColorCustomizations?: Record<string, unknown>
+  tokenColorCustomizations?: Record<string, unknown>
+}) {
+  vi.mocked(vscode.workspace.getConfiguration).mockImplementation((section?: string) => {
+    if (section === 'workbench') {
+      return { get: vi.fn(() => options.colorTheme ?? '') } as unknown as vscode.WorkspaceConfiguration
+    }
+    if (section === 'editor') {
+      return {
+        get: vi.fn((key: string) => {
+          if (key === 'semanticTokenColorCustomizations') {
+            return options.semanticTokenColorCustomizations
+          }
+          if (key === 'tokenColorCustomizations') {
+            return options.tokenColorCustomizations
+          }
+          return undefined
+        }),
+      } as unknown as vscode.WorkspaceConfiguration
+    }
+    return { get: vi.fn() } as unknown as vscode.WorkspaceConfiguration
+  })
+}
+
 describe('ThemeColorResolver', () => {
   let resolver: ThemeColorResolver
   let output: vscode.OutputChannel
@@ -37,9 +63,7 @@ describe('ThemeColorResolver', () => {
 
   describe('loadColors', () => {
     it('should return empty map when colorTheme setting is empty', async () => {
-      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-        get: vi.fn(() => ''),
-      } as unknown as vscode.WorkspaceConfiguration)
+      mockConfiguration({ colorTheme: '' })
 
       const colors = await resolver.loadColors()
       expect(colors).toEqual({})
@@ -47,9 +71,7 @@ describe('ThemeColorResolver', () => {
     })
 
     it('should return empty map when no matching theme is found', async () => {
-      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-        get: vi.fn(() => 'Nonexistent Theme'),
-      } as unknown as vscode.WorkspaceConfiguration)
+      mockConfiguration({ colorTheme: 'Nonexistent Theme' })
       ;(vscode.extensions as { all: unknown[] }).all = [
         {
           extensionUri: vscode.Uri.file('/ext/theme-a'),
@@ -62,9 +84,7 @@ describe('ThemeColorResolver', () => {
     })
 
     it('should match theme by id and extract colors', async () => {
-      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-        get: vi.fn(() => 'my-dark-theme'),
-      } as unknown as vscode.WorkspaceConfiguration)
+      mockConfiguration({ colorTheme: 'my-dark-theme' })
       ;(vscode.extensions as { all: unknown[] }).all = [
         {
           extensionUri: vscode.Uri.file('/ext/my-theme'),
@@ -89,9 +109,7 @@ describe('ThemeColorResolver', () => {
     })
 
     it('should match theme by label when id does not match', async () => {
-      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-        get: vi.fn(() => 'My Dark Theme'),
-      } as unknown as vscode.WorkspaceConfiguration)
+      mockConfiguration({ colorTheme: 'My Dark Theme' })
       ;(vscode.extensions as { all: unknown[] }).all = [
         {
           extensionUri: vscode.Uri.file('/ext/my-theme'),
@@ -114,9 +132,7 @@ describe('ThemeColorResolver', () => {
     })
 
     it('should prefer id match over label match', async () => {
-      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-        get: vi.fn(() => 'theme-b'),
-      } as unknown as vscode.WorkspaceConfiguration)
+      mockConfiguration({ colorTheme: 'theme-b' })
       ;(vscode.extensions as { all: unknown[] }).all = [
         {
           extensionUri: vscode.Uri.file('/ext/themes'),
@@ -142,9 +158,7 @@ describe('ThemeColorResolver', () => {
     })
 
     it('should skip extensions without contributes.themes', async () => {
-      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-        get: vi.fn(() => 'my-theme'),
-      } as unknown as vscode.WorkspaceConfiguration)
+      mockConfiguration({ colorTheme: 'my-theme' })
       ;(vscode.extensions as { all: unknown[] }).all = [
         { extensionUri: vscode.Uri.file('/ext/no-themes'), packageJSON: { contributes: {} } },
         { extensionUri: vscode.Uri.file('/ext/no-contributes'), packageJSON: {} },
@@ -165,9 +179,7 @@ describe('ThemeColorResolver', () => {
     })
 
     it('should return empty map when theme file reading fails', async () => {
-      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-        get: vi.fn(() => 'my-theme'),
-      } as unknown as vscode.WorkspaceConfiguration)
+      mockConfiguration({ colorTheme: 'my-theme' })
       ;(vscode.extensions as { all: unknown[] }).all = [
         {
           extensionUri: vscode.Uri.file('/ext'),
@@ -179,6 +191,32 @@ describe('ThemeColorResolver', () => {
       const colors = await resolver.loadColors()
       expect(colors).toEqual({})
       expect(output.appendLine).toHaveBeenCalledWith('[theme] failed to parse theme file')
+    })
+
+    it('should merge user color customizations on top of theme colors', async () => {
+      mockConfiguration({
+        colorTheme: 'my-theme',
+        semanticTokenColorCustomizations: {
+          rules: { function: '#USER_FUNC' },
+        },
+      })
+      ;(vscode.extensions as { all: unknown[] }).all = [
+        {
+          extensionUri: vscode.Uri.file('/ext'),
+          packageJSON: { contributes: { themes: [{ id: 'my-theme', path: './theme.json' }] } },
+        },
+      ]
+      mockReadFile({
+        'theme.json': JSON.stringify({
+          semanticHighlighting: true,
+          semanticTokenColors: { function: '#THEME_FUNC', class: '#THEME_CLASS' },
+          tokenColors: [],
+        }),
+      })
+
+      const colors = await resolver.loadColors()
+      expect(colors[SymbolKind.Function]).toBe('#USER_FUNC')
+      expect(colors[SymbolKind.Class]).toBe('#THEME_CLASS')
     })
   })
 })

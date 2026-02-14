@@ -13,7 +13,6 @@ vi.mock('../importParser', () => ({
 import { parseImports } from '../importParser'
 
 type ServiceInternals = {
-  output: vscode.OutputChannel
   resolvers: BaseSymbolResolver[]
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
   documentCaches: Map<string, DocumentCache>
@@ -47,11 +46,23 @@ function createMockEditor(lines: string[]) {
   } as unknown as vscode.TextEditor
 }
 
+function createMockOutput() {
+  return {
+    appendLine: vi.fn(),
+    append: vi.fn(),
+    clear: vi.fn(),
+    show: vi.fn(),
+    dispose: vi.fn(),
+  } as unknown as vscode.OutputChannel
+}
+
 describe('DecorationService', () => {
   let service: DecorationService
+  let output: vscode.OutputChannel
 
   beforeEach(() => {
-    service = new DecorationService(TEST_COLORS)
+    output = createMockOutput()
+    service = new DecorationService(TEST_COLORS, output)
     vi.mocked(parseImports).mockReset()
     vi.mocked(vscode.commands.executeCommand).mockReset()
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
@@ -228,7 +239,7 @@ describe('DecorationService', () => {
 
       it('should skip symbols whose kind has no color in the map', async () => {
         const partialColors: SymbolColorMap = { [SymbolKind.Function]: '#DCDCAA' }
-        service = new DecorationService(partialColors)
+        service = new DecorationService(partialColors, output)
         for (const resolver of internals(service).resolvers) {
           vi.spyOn(resolver, 'resolve').mockResolvedValue(undefined)
         }
@@ -249,7 +260,7 @@ describe('DecorationService', () => {
       })
 
       it('should not apply any decorations when colors map is empty', async () => {
-        service = new DecorationService({})
+        service = new DecorationService({}, output)
         for (const resolver of internals(service).resolvers) {
           vi.spyOn(resolver, 'resolve').mockResolvedValue(undefined)
         }
@@ -293,7 +304,7 @@ describe('DecorationService', () => {
         await service.applyImportDecorations(editor)
 
         expect(spy).not.toHaveBeenCalled()
-        expect(internals(service).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[cache] full hit'))
+        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[cache] full hit'))
       })
 
       it('should invalidate cache when importSectionText changes', async () => {
@@ -330,7 +341,7 @@ describe('DecorationService', () => {
 
         // Only useEffect should be resolved, not useState
         expect(spy).toHaveBeenCalledTimes(1)
-        expect(internals(service).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('resolving 1/2'))
+        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('resolving 1/2'))
       })
 
       it('should update cache after resolving new symbols', async () => {
@@ -452,7 +463,7 @@ describe('DecorationService', () => {
     it('should dispose the output channel', () => {
       service.dispose()
 
-      expect(internals(service).output.dispose).toHaveBeenCalledOnce()
+      expect(output.dispose).toHaveBeenCalledOnce()
     })
 
     it('should handle empty state gracefully', () => {
