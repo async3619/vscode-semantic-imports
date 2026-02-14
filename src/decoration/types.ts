@@ -1,8 +1,9 @@
 import type * as vscode from 'vscode'
+import type { SymbolKind } from '../symbol'
 
 export interface DocumentCache {
   importSectionText: string
-  symbolKinds: Map<string, string>
+  symbolKinds: Map<string, SymbolKind>
 }
 
 export interface SymbolOccurrence {

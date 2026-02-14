@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
             'src/decoration/*.test.ts',
             'src/symbol/*.test.ts',
             'src/symbol/utils/*.test.ts',
+            'src/symbol/resolvers/*.test.ts',
           ],
         },
       },

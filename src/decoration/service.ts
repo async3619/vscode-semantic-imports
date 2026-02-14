@@ -1,18 +1,23 @@
 import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
-import { SymbolResolver } from '../symbol'
+import type { BaseSymbolResolver, SymbolKind } from '../symbol'
+import { HoverSymbolResolver, SemanticTokenSymbolResolver, QuickInfoSymbolResolver } from '../symbol'
 import { DEFAULT_COLOR, KIND_COLORS } from './constants'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
 export class DecorationService implements vscode.Disposable {
   private readonly output: vscode.OutputChannel
-  private readonly symbolResolver: SymbolResolver
+  private readonly resolvers: BaseSymbolResolver[]
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
 
   constructor() {
     this.output = vscode.window.createOutputChannel('Semantic Imports')
-    this.symbolResolver = new SymbolResolver(this.output)
+    this.resolvers = [
+      new HoverSymbolResolver(this.output),
+      new SemanticTokenSymbolResolver(this.output),
+      new QuickInfoSymbolResolver(this.output),
+    ]
   }
 
   async applyImportDecorations(editor: vscode.TextEditor): Promise<void> {
@@ -51,7 +56,7 @@ export class DecorationService implements vscode.Disposable {
     const docUri = document.uri.toString()
     const importSectionText = text.split('\n').slice(0, importEndLine).join('\n')
     const cached = this.documentCaches.get(docUri)
-    const symbolKinds = new Map<string, string>()
+    const symbolKinds = new Map<string, SymbolKind>()
     const uniqueSymbols = [...new Set(occurrences.map((o) => o.symbol))]
 
     // Reuse cached kinds only if import section is unchanged
@@ -79,15 +84,8 @@ export class DecorationService implements vscode.Disposable {
             if (!occurrence) return
             const pos = occurrence.range.start
 
-            const resolvers: Array<() => Promise<string | undefined>> = [
-              () => this.symbolResolver.resolveByHover(document, pos),
-              () => this.symbolResolver.resolveBySemanticToken(document, pos),
-              () => this.symbolResolver.resolveByQuickInfo(document, pos),
-            ]
-
-            let kind: string | undefined
-            for (const resolver of resolvers) {
-              kind = await resolver()
+            for (const resolver of this.resolvers) {
+              const kind = await resolver.resolve(document, pos)
               if (kind) {
                 this.output.appendLine(`[resolved] ${symbol} → ${kind}`)
                 symbolKinds.set(symbol, kind)
