@@ -1,0 +1,1 @@
+export { SymbolResolver } from './resolver'

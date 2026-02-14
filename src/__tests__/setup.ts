@@ -21,10 +21,14 @@ class MockMarkdownString {
 }
 
 class MockUri {
+  public readonly fsPath: string
+
   constructor(
     public readonly scheme: string,
     public readonly path: string,
-  ) {}
+  ) {
+    this.fsPath = path
+  }
 
   toString(): string {
     return `${this.scheme}://${this.path}`
@@ -65,6 +69,7 @@ vi.mock('vscode', () => ({
     onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
   },
   workspace: {
+    openTextDocument: vi.fn(async () => ({})),
     onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
     onDidCloseTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
   },
