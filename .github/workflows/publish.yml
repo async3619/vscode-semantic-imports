@@ -28,6 +28,14 @@ jobs:
         run: |
           pnpm run build
           if [[ "${{ github.ref_name }}" == *-* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            BASE="${VERSION%%-*}"
+            MAJOR=$(echo "$BASE" | cut -d. -f1)
+            MINOR=$(echo "$BASE" | cut -d. -f2)
+            DEV_NUM="${VERSION##*.}"
+            if (( MINOR % 2 == 0 )); then MINOR=$((MINOR + 1)); fi
+            npm version "$MAJOR.$MINOR.$DEV_NUM" --no-git-tag-version
             pnpm exec vsce package --no-dependencies --pre-release
             pnpm exec vsce publish --no-dependencies --packagePath *.vsix --pre-release
           else
