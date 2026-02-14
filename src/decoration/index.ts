@@ -1,3 +1,1 @@
-export { applyImportDecorations } from './applyImportDecorations'
-export { clearDocumentCache } from './clearDocumentCache'
-export { disposeDecorations } from './disposeDecorations'
+export { DecorationService } from './service'
