@@ -402,6 +402,15 @@ describe('SymbolResolver', () => {
       expect(result).toBe('interface')
     })
 
+    it('should return undefined when definition target is not a file URI', async () => {
+      mockQuickInfoResolution({
+        definitions: [createMockLocation('git:///def.ts', 0, 0, 3)],
+        quickinfo: { body: { kind: 'function', kindModifiers: '', displayString: '' } },
+      })
+      const result = await resolver.resolveByQuickInfo(createMockDocument(), createMockPosition())
+      expect(result).toBeUndefined()
+    })
+
     it('should log definition and kind to output channel', async () => {
       mockQuickInfoResolution({
         definitions: [createMockLocation('file:///def.ts', 5, 4, 10)],

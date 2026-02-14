@@ -43,6 +43,12 @@ describe('DecorationService', () => {
     vi.mocked(parseImports).mockReset()
     vi.mocked(vscode.commands.executeCommand).mockReset()
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
+
+    // Explicitly stub all resolver methods to undefined by default.
+    // Tests that need a specific strategy to return a value will override the relevant spy.
+    vi.spyOn(internals(service).symbolResolver, 'resolveByHover').mockResolvedValue(undefined)
+    vi.spyOn(internals(service).symbolResolver, 'resolveBySemanticToken').mockResolvedValue(undefined)
+    vi.spyOn(internals(service).symbolResolver, 'resolveByQuickInfo').mockResolvedValue(undefined)
   })
 
   describe('applyImportDecorations', () => {

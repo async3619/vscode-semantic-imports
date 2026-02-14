@@ -84,6 +84,8 @@ export class SymbolResolver {
     const targetRange = 'targetUri' in def ? (def.targetSelectionRange ?? def.targetRange) : def.range
     const targetPos = targetRange.start
 
+    if (targetUri.scheme !== 'file') return undefined
+
     this.output.appendLine(
       `[quickinfo] ${position.line}:${position.character} → def ${targetUri.fsPath}:${targetPos.line}:${targetPos.character}`,
     )
