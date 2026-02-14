@@ -36,7 +36,7 @@ This means you can visually distinguish imported functions, classes, types, and 
 ## Features
 
 - **Type-aware coloring** — Imported symbols are colored based on their resolved type (function, class, interface, etc.), not just their text
-- **Zero configuration** — Works out of the box with no settings to configure
+- **Zero configuration** — Automatically reads your active color theme and applies matching colors to imported symbols. Supports both semantic token colors and TextMate rules, and also respects your custom color settings (`editor.semanticTokenColorCustomizations`, `editor.tokenColorCustomizations`). When you switch themes, colors update instantly — no settings to configure
 
 ## How It Works
 
