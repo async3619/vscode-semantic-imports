@@ -65,5 +65,9 @@
       "@vscode/vsce-sign",
       "keytar"
     ]
+  },
+  "dependencies": {
+    "fast-plist": "^0.1.3",
+    "jsonc-parser": "^3.3.1"
   }
 }

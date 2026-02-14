@@ -2,7 +2,7 @@ import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
 import { HoverSymbolResolver, SemanticTokenSymbolResolver, QuickInfoSymbolResolver } from '../symbol'
-import { DEFAULT_COLOR, KIND_COLORS } from './constants'
+import type { SymbolColorMap } from '../theme'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
 export class DecorationService implements vscode.Disposable {
@@ -10,14 +10,24 @@ export class DecorationService implements vscode.Disposable {
   private readonly resolvers: BaseSymbolResolver[]
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
+  private colors: SymbolColorMap
 
-  constructor() {
-    this.output = vscode.window.createOutputChannel('Semantic Imports')
+  constructor(colors: SymbolColorMap = {}, output: vscode.OutputChannel) {
+    this.output = output
+    this.colors = colors
     this.resolvers = [
       new HoverSymbolResolver(this.output),
       new SemanticTokenSymbolResolver(this.output),
       new QuickInfoSymbolResolver(this.output),
     ]
+  }
+
+  setColors(colors: SymbolColorMap) {
+    this.colors = colors
+    for (const type of this.decorationTypes.values()) {
+      type.dispose()
+    }
+    this.decorationTypes.clear()
   }
 
   async applyImportDecorations(editor: vscode.TextEditor) {
@@ -97,7 +107,7 @@ export class DecorationService implements vscode.Disposable {
               }
             }
           } catch {
-            // Resolution may fail for this symbol; fall back to default color
+            // Resolution may fail for this symbol; skip decoration
           }
         }),
       )
@@ -112,7 +122,10 @@ export class DecorationService implements vscode.Disposable {
 
     for (const { symbol, range } of occurrences) {
       const kind = symbolKinds.get(symbol)
-      const color = kind ? (KIND_COLORS[kind] ?? DEFAULT_COLOR) : DEFAULT_COLOR
+      const color = kind ? this.colors[kind] : undefined
+      if (!color) {
+        continue
+      }
       const ranges = rangesByColor.get(color) ?? []
       ranges.push(range)
       rangesByColor.set(color, ranges)

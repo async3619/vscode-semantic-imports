@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import { DecorationService } from './decoration'
+import { ThemeColorResolver } from './theme'
 
 const SUPPORTED_LANGUAGES = new Set(['typescript', 'typescriptreact'])
 
@@ -8,7 +9,9 @@ function isSupported(document: vscode.TextDocument) {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  const service = new DecorationService()
+  const output = vscode.window.createOutputChannel('Semantic Imports')
+  const themeResolver = new ThemeColorResolver(output)
+  const service = new DecorationService({}, output)
 
   function triggerDecoration(editor: vscode.TextEditor) {
     service.applyImportDecorations(editor).catch(() => {
@@ -16,14 +19,32 @@ export function activate(context: vscode.ExtensionContext) {
     })
   }
 
-  for (const editor of vscode.window.visibleTextEditors) {
-    if (isSupported(editor.document)) {
-      triggerDecoration(editor)
+  function triggerAllVisible() {
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (isSupported(editor.document)) {
+        triggerDecoration(editor)
+      }
     }
   }
 
+  async function refreshColors() {
+    const colors = await themeResolver.loadColors()
+    service.setColors(colors)
+    triggerAllVisible()
+  }
+
+  // Initialize theme colors, then apply decorations
+  refreshColors()
+
   context.subscriptions.push(
+    output,
     service,
+    vscode.window.onDidChangeActiveColorTheme(() => {
+      refreshColors()
+    }),
+    vscode.extensions.onDidChange(() => {
+      refreshColors()
+    }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor && isSupported(editor.document)) {
         triggerDecoration(editor)

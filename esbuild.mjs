@@ -27,6 +27,7 @@ const buildOptions = {
   external: ['vscode'],
   format: 'cjs',
   platform: 'node',
+  mainFields: ['module', 'main'],
   target: 'node18',
   sourcemap: true,
   minify: !isWatch,
