@@ -31,8 +31,12 @@ function mockQuickInfoResolution(options: {
   quickinfo?: { body?: { kind: string; kindModifiers: string; displayString: string } } | null
 }): void {
   vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-    if (command === 'vscode.executeDefinitionProvider') return options.definitions ?? null
-    if (command === 'typescript.tsserverRequest') return options.quickinfo ?? null
+    if (command === 'vscode.executeDefinitionProvider') {
+      return options.definitions ?? null
+    }
+    if (command === 'typescript.tsserverRequest') {
+      return options.quickinfo ?? null
+    }
     return null
   })
 }

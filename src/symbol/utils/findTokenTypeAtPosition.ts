@@ -23,7 +23,9 @@ export function findTokenTypeAtPosition(
       return legend.tokenTypes[tokenTypeIndex]
     }
 
-    if (line > targetLine) break
+    if (line > targetLine) {
+      break
+    }
   }
 
   return undefined

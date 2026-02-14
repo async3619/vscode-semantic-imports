@@ -12,7 +12,9 @@ export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
       position,
     )
 
-    if (!definitions || definitions.length === 0) return undefined
+    if (!definitions || definitions.length === 0) {
+      return undefined
+    }
 
     const def = definitions[0]
     const targetUri = 'targetUri' in def ? def.targetUri : def.uri
@@ -33,7 +35,9 @@ export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
       vscode.commands.executeCommand<vscode.SemanticTokens>('vscode.provideDocumentSemanticTokens', targetUri),
     ])
 
-    if (!legend || !tokens) return undefined
+    if (!legend || !tokens) {
+      return undefined
+    }
 
     const tokenType = findTokenTypeAtPosition(tokens, legend, targetPos.line, targetPos.character)
     this.output.appendLine(`[semantic] ${targetPos.line}:${targetPos.character} → ${tokenType ?? 'unknown'}`)

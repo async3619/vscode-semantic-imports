@@ -12,14 +12,18 @@ export class HoverSymbolResolver extends BaseSymbolResolver {
       position,
     )
 
-    if (!hovers || hovers.length === 0) return undefined
+    if (!hovers || hovers.length === 0) {
+      return undefined
+    }
 
     for (const hover of hovers) {
       for (const content of hover.contents) {
         const text = extractContentText(content)
         this.output.appendLine(`[hover] ${position.line}:${position.character} → ${text.slice(0, 200)}`)
         const match = text.match(/\(alias\)\s+(function|class|interface|type|enum|namespace|const|let|var|module)\b/)
-        if (match) return toSymbolKind(match[1])
+        if (match) {
+          return toSymbolKind(match[1])
+        }
       }
     }
 

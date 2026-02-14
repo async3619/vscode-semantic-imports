@@ -30,7 +30,9 @@ export class DecorationService implements vscode.Disposable {
       editor.setDecorations(type, [])
     }
 
-    if (symbols.length === 0) return
+    if (symbols.length === 0) {
+      return
+    }
 
     const escapedSymbols = symbols.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     const pattern = new RegExp(`\\b(${escapedSymbols.join('|')})\\b`, 'g')
@@ -81,7 +83,9 @@ export class DecorationService implements vscode.Disposable {
         symbolsToResolve.map(async (symbol) => {
           try {
             const occurrence = occurrences.find((o) => o.symbol === symbol)
-            if (!occurrence) return
+            if (!occurrence) {
+              return
+            }
             const pos = occurrence.range.start
 
             for (const resolver of this.resolvers) {

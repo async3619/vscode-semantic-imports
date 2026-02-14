@@ -51,9 +51,15 @@ function mockSemanticTokenResolution(options: {
   tokens?: { data: Uint32Array } | null
 }): void {
   vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-    if (command === 'vscode.executeDefinitionProvider') return options.definitions ?? null
-    if (command === 'vscode.provideDocumentSemanticTokensLegend') return options.legend ?? null
-    if (command === 'vscode.provideDocumentSemanticTokens') return options.tokens ?? null
+    if (command === 'vscode.executeDefinitionProvider') {
+      return options.definitions ?? null
+    }
+    if (command === 'vscode.provideDocumentSemanticTokensLegend') {
+      return options.legend ?? null
+    }
+    if (command === 'vscode.provideDocumentSemanticTokens') {
+      return options.tokens ?? null
+    }
     return null
   })
 }
@@ -139,8 +145,12 @@ describe('SemanticTokenSymbolResolver', () => {
     const defRange = new vscode.Range(new vscode.Position(5, 4), new vscode.Position(5, 10))
 
     vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-      if (command === 'vscode.executeDefinitionProvider') return [{ uri: defUri, range: defRange }]
-      if (command === 'vscode.provideDocumentSemanticTokensLegend') return DEFAULT_LEGEND
+      if (command === 'vscode.executeDefinitionProvider') {
+        return [{ uri: defUri, range: defRange }]
+      }
+      if (command === 'vscode.provideDocumentSemanticTokensLegend') {
+        return DEFAULT_LEGEND
+      }
       if (command === 'vscode.provideDocumentSemanticTokens') {
         return { data: createTokenData([[5, 4, 6, 6]]) }
       }
@@ -160,7 +170,9 @@ describe('SemanticTokenSymbolResolver', () => {
       if (command === 'vscode.executeDefinitionProvider') {
         return [{ targetUri, targetRange, targetSelectionRange }]
       }
-      if (command === 'vscode.provideDocumentSemanticTokensLegend') return DEFAULT_LEGEND
+      if (command === 'vscode.provideDocumentSemanticTokensLegend') {
+        return DEFAULT_LEGEND
+      }
       if (command === 'vscode.provideDocumentSemanticTokens') {
         return { data: createTokenData([[10, 7, 5, 2]]) }
       }
@@ -179,7 +191,9 @@ describe('SemanticTokenSymbolResolver', () => {
       if (command === 'vscode.executeDefinitionProvider') {
         return [{ targetUri, targetRange }]
       }
-      if (command === 'vscode.provideDocumentSemanticTokensLegend') return DEFAULT_LEGEND
+      if (command === 'vscode.provideDocumentSemanticTokensLegend') {
+        return DEFAULT_LEGEND
+      }
       if (command === 'vscode.provideDocumentSemanticTokens') {
         return { data: createTokenData([[3, 0, 8, 4]]) }
       }

@@ -19,14 +19,18 @@ export class QuickInfoSymbolResolver extends BaseSymbolResolver {
       position,
     )
 
-    if (!definitions || definitions.length === 0) return undefined
+    if (!definitions || definitions.length === 0) {
+      return undefined
+    }
 
     const def = definitions[0]
     const targetUri = 'targetUri' in def ? def.targetUri : def.uri
     const targetRange = 'targetUri' in def ? (def.targetSelectionRange ?? def.targetRange) : def.range
     const targetPos = targetRange.start
 
-    if (targetUri.scheme !== 'file') return undefined
+    if (targetUri.scheme !== 'file') {
+      return undefined
+    }
 
     this.output.appendLine(
       `[quickinfo] ${position.line}:${position.character} → def ${targetUri.fsPath}:${targetPos.line}:${targetPos.character}`,
@@ -39,7 +43,9 @@ export class QuickInfoSymbolResolver extends BaseSymbolResolver {
     })
 
     const kind = result?.body?.kind
-    if (!kind) return undefined
+    if (!kind) {
+      return undefined
+    }
 
     this.output.appendLine(`[quickinfo] ${position.line}:${position.character} → ${kind}`)
     return toSymbolKind(kind)

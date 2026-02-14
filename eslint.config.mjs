@@ -30,6 +30,11 @@ const eslintConfig = defineConfig([
     },
   },
   prettierPlugin,
+  {
+    rules: {
+      curly: ['error', 'all'],
+    },
+  },
   globalIgnores(['dist/', 'node_modules/']),
 ])
 
