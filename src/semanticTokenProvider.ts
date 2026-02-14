@@ -15,7 +15,7 @@ export class ImportedSymbolTokenProvider implements vscode.DocumentSemanticToken
     _token: vscode.CancellationToken,
   ): vscode.SemanticTokens {
     const text = document.getText()
-    const { symbols, importEndLine } = parseImports(text)
+    const { symbols } = parseImports(text)
 
     if (symbols.length === 0) {
       return new vscode.SemanticTokens(new Uint32Array(0))
@@ -26,7 +26,7 @@ export class ImportedSymbolTokenProvider implements vscode.DocumentSemanticToken
     const pattern = new RegExp(`\\b(${escapedSymbols.join('|')})\\b`, 'g')
 
     const lineCount = document.lineCount
-    for (let lineIndex = importEndLine; lineIndex < lineCount; lineIndex++) {
+    for (let lineIndex = 0; lineIndex < lineCount; lineIndex++) {
       const lineText = document.lineAt(lineIndex).text
       let match: RegExpExecArray | null
 
