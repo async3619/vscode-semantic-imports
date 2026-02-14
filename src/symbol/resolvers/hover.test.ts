@@ -7,15 +7,15 @@ type ResolverInternals = {
   output: vscode.OutputChannel
 }
 
-function internals(resolver: HoverSymbolResolver): ResolverInternals {
+function internals(resolver: HoverSymbolResolver) {
   return resolver as unknown as ResolverInternals
 }
 
-function createMockDocument(uri = 'file:///test.ts'): vscode.TextDocument {
+function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
 }
 
-function createMockPosition(line = 0, character = 0): vscode.Position {
+function createMockPosition(line = 0, character = 0) {
   return new vscode.Position(line, character)
 }
 

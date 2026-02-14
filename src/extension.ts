@@ -3,14 +3,14 @@ import { DecorationService } from './decoration'
 
 const SUPPORTED_LANGUAGES = new Set(['typescript', 'typescriptreact'])
 
-function isSupported(document: vscode.TextDocument): boolean {
+function isSupported(document: vscode.TextDocument) {
   return document.uri.scheme === 'file' && SUPPORTED_LANGUAGES.has(document.languageId)
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext) {
   const service = new DecorationService()
 
-  function triggerDecoration(editor: vscode.TextEditor): void {
+  function triggerDecoration(editor: vscode.TextEditor) {
     service.applyImportDecorations(editor).catch(() => {
       // TS language service may not be ready yet; silently ignore
     })
@@ -43,6 +43,6 @@ export function activate(context: vscode.ExtensionContext): void {
   )
 }
 
-export function deactivate(): void {
+export function deactivate() {
   // Service is disposed automatically via context.subscriptions
 }

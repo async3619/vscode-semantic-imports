@@ -1,11 +1,10 @@
 import * as vscode from 'vscode'
 import { BaseSymbolResolver } from '../types'
-import type { SymbolKind } from '../types'
 import { extractContentText } from '../utils/extractContentText'
 import { toSymbolKind } from '../utils/toSymbolKind'
 
 export class HoverSymbolResolver extends BaseSymbolResolver {
-  async resolve(document: vscode.TextDocument, position: vscode.Position): Promise<SymbolKind | undefined> {
+  async resolve(document: vscode.TextDocument, position: vscode.Position) {
     const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
       'vscode.executeHoverProvider',
       document.uri,

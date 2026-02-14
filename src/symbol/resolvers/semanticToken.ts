@@ -1,11 +1,10 @@
 import * as vscode from 'vscode'
 import { BaseSymbolResolver } from '../types'
-import type { SymbolKind } from '../types'
 import { findTokenTypeAtPosition } from '../utils/findTokenTypeAtPosition'
 import { toSymbolKind } from '../utils/toSymbolKind'
 
 export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
-  async resolve(document: vscode.TextDocument, position: vscode.Position): Promise<SymbolKind | undefined> {
+  async resolve(document: vscode.TextDocument, position: vscode.Position) {
     const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
       'vscode.executeDefinitionProvider',
       document.uri,

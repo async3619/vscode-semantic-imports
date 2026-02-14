@@ -7,19 +7,19 @@ type ResolverInternals = {
   output: vscode.OutputChannel
 }
 
-function internals(resolver: SemanticTokenSymbolResolver): ResolverInternals {
+function internals(resolver: SemanticTokenSymbolResolver) {
   return resolver as unknown as ResolverInternals
 }
 
-function createMockDocument(uri = 'file:///test.ts'): vscode.TextDocument {
+function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
 }
 
-function createMockPosition(line = 0, character = 0): vscode.Position {
+function createMockPosition(line = 0, character = 0) {
   return new vscode.Position(line, character)
 }
 
-function createMockLocation(uri = 'file:///def.ts', line = 0, character = 0, endCharacter = 3): vscode.Location {
+function createMockLocation(uri = 'file:///def.ts', line = 0, character = 0, endCharacter = 3) {
   return {
     uri: vscode.Uri.parse(uri),
     range: new vscode.Range(new vscode.Position(line, character), new vscode.Position(line, endCharacter)),
@@ -31,7 +31,7 @@ const DEFAULT_LEGEND: vscode.SemanticTokensLegend = {
   tokenModifiers: [],
 } as unknown as vscode.SemanticTokensLegend
 
-function createTokenData(tokens: Array<[line: number, char: number, length: number, typeIndex: number]>): Uint32Array {
+function createTokenData(tokens: Array<[line: number, char: number, length: number, typeIndex: number]>) {
   const data: number[] = []
   let prevLine = 0
   let prevChar = 0
@@ -49,7 +49,7 @@ function mockSemanticTokenResolution(options: {
   definitions?: vscode.Location[] | null
   legend?: vscode.SemanticTokensLegend | null
   tokens?: { data: Uint32Array } | null
-}): void {
+}) {
   vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
     if (command === 'vscode.executeDefinitionProvider') {
       return options.definitions ?? null

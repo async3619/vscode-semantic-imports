@@ -20,7 +20,7 @@ export class DecorationService implements vscode.Disposable {
     ]
   }
 
-  async applyImportDecorations(editor: vscode.TextEditor): Promise<void> {
+  async applyImportDecorations(editor: vscode.TextEditor) {
     const document = editor.document
     const text = document.getText()
     const { symbols, importEndLine } = parseImports(text)
@@ -124,11 +124,11 @@ export class DecorationService implements vscode.Disposable {
     }
   }
 
-  clearDocumentCache(uri: string): void {
+  clearDocumentCache(uri: string) {
     this.documentCaches.delete(uri)
   }
 
-  dispose(): void {
+  dispose() {
     for (const type of this.decorationTypes.values()) {
       type.dispose()
     }
@@ -137,7 +137,7 @@ export class DecorationService implements vscode.Disposable {
     this.output.dispose()
   }
 
-  private getDecorationType(color: string): vscode.TextEditorDecorationType {
+  private getDecorationType(color: string) {
     let type = this.decorationTypes.get(color)
     if (!type) {
       type = vscode.window.createTextEditorDecorationType({ color })

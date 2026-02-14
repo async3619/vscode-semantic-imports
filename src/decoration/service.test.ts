@@ -20,11 +20,11 @@ type ServiceInternals = {
   getDecorationType: (color: string) => vscode.TextEditorDecorationType
 }
 
-function internals(service: DecorationService): ServiceInternals {
+function internals(service: DecorationService) {
   return service as unknown as ServiceInternals
 }
 
-function createMockEditor(lines: string[]): vscode.TextEditor {
+function createMockEditor(lines: string[]) {
   const text = lines.join('\n')
   return {
     document: {

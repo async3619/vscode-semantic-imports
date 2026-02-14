@@ -30,15 +30,15 @@ class MockUri {
     this.fsPath = path
   }
 
-  toString(): string {
+  toString() {
     return `${this.scheme}://${this.path}`
   }
 
-  static file(path: string): MockUri {
+  static file(path: string) {
     return new MockUri('file', path)
   }
 
-  static parse(value: string): MockUri {
+  static parse(value: string) {
     const match = value.match(/^([a-z]+):\/\/(.*)$/)
     if (match) {
       return new MockUri(match[1], match[2])

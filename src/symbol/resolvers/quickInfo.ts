@@ -1,6 +1,5 @@
 import * as vscode from 'vscode'
 import { BaseSymbolResolver } from '../types'
-import type { SymbolKind } from '../types'
 import { toSymbolKind } from '../utils/toSymbolKind'
 
 interface QuickInfoResponse {
@@ -12,7 +11,7 @@ interface QuickInfoResponse {
 }
 
 export class QuickInfoSymbolResolver extends BaseSymbolResolver {
-  async resolve(document: vscode.TextDocument, position: vscode.Position): Promise<SymbolKind | undefined> {
+  async resolve(document: vscode.TextDocument, position: vscode.Position) {
     const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
       'vscode.executeDefinitionProvider',
       document.uri,

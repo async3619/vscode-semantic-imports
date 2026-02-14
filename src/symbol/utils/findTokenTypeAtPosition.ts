@@ -5,7 +5,7 @@ export function findTokenTypeAtPosition(
   legend: vscode.SemanticTokensLegend,
   targetLine: number,
   targetChar: number,
-): string | undefined {
+) {
   const data = tokens.data
   let line = 0
   let char = 0
