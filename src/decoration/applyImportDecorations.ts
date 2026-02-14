@@ -1,69 +1,10 @@
 import * as vscode from 'vscode'
-import { parseImports } from './importParser'
-
-// Colors from VS Code Light theme
-const KIND_COLORS: Record<string, string> = {
-  function: '#800000',
-  class: '#008080',
-  interface: '#008080',
-  type: '#008080',
-  enum: '#008080',
-  namespace: '#008080',
-  module: '#008080',
-  variable: '#000080',
-  const: '#000080',
-  let: '#000080',
-}
-
-const DEFAULT_COLOR = '#000000'
-
-const output = vscode.window.createOutputChannel('Semantic Imports')
-
-const decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
-
-function getDecorationType(color: string): vscode.TextEditorDecorationType {
-  let type = decorationTypes.get(color)
-  if (!type) {
-    type = vscode.window.createTextEditorDecorationType({ color })
-    decorationTypes.set(color, type)
-  }
-  return type
-}
-
-function extractContentText(content: vscode.MarkedString | vscode.MarkdownString): string {
-  if (content instanceof vscode.MarkdownString) return content.value
-  if (typeof content === 'string') return content
-  return content.value
-}
-
-async function resolveSymbolKind(
-  document: vscode.TextDocument,
-  position: vscode.Position,
-): Promise<string | undefined> {
-  const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
-    'vscode.executeHoverProvider',
-    document.uri,
-    position,
-  )
-
-  if (!hovers || hovers.length === 0) return undefined
-
-  for (const hover of hovers) {
-    for (const content of hover.contents) {
-      const text = extractContentText(content)
-      output.appendLine(`[hover] ${position.line}:${position.character} → ${text.slice(0, 200)}`)
-      const match = text.match(/\(alias\)\s+(function|class|interface|type|enum|namespace|const|let|var|module)\b/)
-      if (match) return match[1]
-    }
-  }
-
-  return undefined
-}
-
-interface SymbolOccurrence {
-  symbol: string
-  range: vscode.Range
-}
+import { parseImports } from '../importParser'
+import { DEFAULT_COLOR, KIND_COLORS } from './constants'
+import { getDecorationType } from './getDecorationType'
+import { resolveSymbolKind } from './resolveSymbolKind'
+import { decorationTypes } from './state'
+import type { SymbolOccurrence } from './types'
 
 export async function applyImportDecorations(editor: vscode.TextEditor): Promise<void> {
   const document = editor.document
@@ -129,11 +70,4 @@ export async function applyImportDecorations(editor: vscode.TextEditor): Promise
   for (const [color, ranges] of rangesByColor) {
     editor.setDecorations(getDecorationType(color), ranges)
   }
-}
-
-export function disposeDecorations(): void {
-  for (const type of decorationTypes.values()) {
-    type.dispose()
-  }
-  decorationTypes.clear()
 }
