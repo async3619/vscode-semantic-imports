@@ -28,18 +28,24 @@
       }
     ],
     ["@semantic-release/npm", { "npmPublish": false }],
-    ["@semantic-release/exec", { "prepareCmd": "pnpm package" }],
-    [
-      "@semantic-release/github",
-      {
-        "assets": [{ "path": "*.vsix", "label": "VS Code Extension (${nextRelease.version})" }]
-      }
-    ],
     [
       "@semantic-release/git",
       {
         "message": "chore(📦): ${nextRelease.version}\n\n${nextRelease.notes}",
         "assets": ["package.json"]
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "bash scripts/vsce-package.sh ${nextRelease.version}",
+        "publishCmd": "bash scripts/vsce-publish.sh ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [{ "path": "*.vsix", "label": "VS Code Extension (${nextRelease.version})" }]
       }
     ]
   ]
