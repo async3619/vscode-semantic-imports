@@ -6,7 +6,7 @@
       "type": "npm",
       "script": "build",
       "group": "build",
-      "problemMatcher": ["$tsc"]
+      "problemMatcher": []
     },
     {
       "label": "watch",
@@ -14,7 +14,19 @@
       "script": "watch",
       "isBackground": true,
       "group": "build",
-      "problemMatcher": ["$tsc-watch"]
+      "problemMatcher": {
+        "owner": "esbuild",
+        "source": "esbuild",
+        "pattern": {
+          "regexp": "^✘ \\[ERROR\\] (.+)$",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "\\[watch\\] Build started",
+          "endsPattern": "\\[watch\\] Build finished"
+        }
+      }
     }
   ]
 }
