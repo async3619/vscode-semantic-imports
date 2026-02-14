@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import { extractContentText } from './extractContentText'
+import { extractContentText } from '../utils/extractContentText'
 import { output } from './state'
 
 export async function resolveSymbolKind(
