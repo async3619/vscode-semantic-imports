@@ -63,6 +63,9 @@ chore: update dependencies
 - **Issue 제목은 conventional commit 형식이 아닌, 목적을 설명하는 자연어로 작성한다**
   - 좋은 예: `import된 심볼에 대한 semantic token 제공`
   - 나쁜 예: `feat(provider): add semantic tokens for imported symbols`
+- **PR 제목은 conventional commit 형식을 따른다** (Squash Merge 시 커밋 메시지로 사용됨)
+  - 좋은 예: `feat(provider): add type-based coloring for imported symbols`
+  - 나쁜 예: `Import 구문의 심볼에 타입 기반 색상 적용`
 
 ## Tech Stack
 
