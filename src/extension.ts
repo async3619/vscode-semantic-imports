@@ -33,7 +33,9 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.workspace.onDidCloseTextDocument((document) => {
-      clearDocumentCache(document.uri.toString())
+      if (isSupported(document)) {
+        clearDocumentCache(document.uri.toString())
+      }
     }),
   )
 }
