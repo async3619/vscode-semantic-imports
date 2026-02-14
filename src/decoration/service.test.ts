@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { DecorationService } from './service'
 import type { DocumentCache } from './types'
 import type { BaseSymbolResolver } from '../symbol'
-import { SymbolKind } from '../symbol'
+import { SymbolKind, TsServerLoadingError } from '../symbol'
 import type { SymbolColorMap } from '../theme'
 
 vi.mock('../importParser', () => ({
@@ -16,6 +16,7 @@ type ServiceInternals = {
   resolvers: BaseSymbolResolver[]
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
   documentCaches: Map<string, DocumentCache>
+  retryTimeouts: Map<string, ReturnType<typeof setTimeout>>
   colors: SymbolColorMap
   getDecorationType: (color: string) => vscode.TextEditorDecorationType
 }
@@ -61,6 +62,7 @@ describe('DecorationService', () => {
   let output: vscode.OutputChannel
 
   beforeEach(() => {
+    vi.useFakeTimers()
     output = createMockOutput()
     service = new DecorationService(TEST_COLORS, output)
     vi.mocked(parseImports).mockReset()
@@ -72,6 +74,10 @@ describe('DecorationService', () => {
     for (const resolver of internals(service).resolvers) {
       vi.spyOn(resolver, 'resolve').mockResolvedValue(undefined)
     }
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   describe('applyImportDecorations', () => {
@@ -364,6 +370,118 @@ describe('DecorationService', () => {
         expect(cached!.symbolKinds.get('useEffect')).toBe(SymbolKind.Function)
       })
     })
+
+    describe('tsserver loading retry', () => {
+      it('should schedule a retry when resolver throws TsServerLoadingError', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockRejectedValue(new TsServerLoadingError())
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor)
+
+        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(true)
+      })
+
+      it('should log retry scheduling', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockRejectedValue(new TsServerLoadingError())
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor)
+
+        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[retry] scheduling retry 1/5'))
+      })
+
+      it('should use linear backoff for retry delays', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockRejectedValue(new TsServerLoadingError())
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+
+        // First call: retryCount=0 → delay=500
+        await service.applyImportDecorations(editor, 0)
+        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('in 500ms'))
+
+        // Second call: retryCount=1 → delay=1000
+        await service.applyImportDecorations(editor, 1)
+        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('in 1000ms'))
+      })
+
+      it('should not schedule retry when max retries exceeded', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockRejectedValue(new TsServerLoadingError())
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor, 5)
+
+        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(false)
+      })
+
+      it('should cancel pending retry when new decoration is requested', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockRejectedValue(new TsServerLoadingError())
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor)
+
+        const firstTimeout = internals(service).retryTimeouts.get(editor.document.uri.toString())
+        expect(firstTimeout).toBeDefined()
+
+        // Trigger new decoration request — should cancel the pending retry
+        await service.applyImportDecorations(editor)
+
+        const secondTimeout = internals(service).retryTimeouts.get(editor.document.uri.toString())
+        expect(secondTimeout).not.toBe(firstTimeout)
+      })
+
+      it('should execute retry after timeout fires', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
+        const resolveSpy = vi
+          .spyOn(internals(service).resolvers[0], 'resolve')
+          .mockRejectedValueOnce(new TsServerLoadingError())
+          .mockResolvedValueOnce(SymbolKind.Function)
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor)
+
+        // Fast-forward timer to trigger the retry
+        await vi.advanceTimersByTimeAsync(500)
+
+        // Resolver should have been called twice (initial + retry)
+        expect(resolveSpy).toHaveBeenCalledTimes(2)
+      })
+
+      it('should not schedule retry for non-TsServerLoadingError', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockRejectedValue(new Error('other error'))
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor)
+
+        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(false)
+      })
+
+      it('should still apply partial decorations when some symbols resolve and others are loading', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState', 'MyClass'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockImplementation(async (_doc, pos) => {
+          if (pos.character === 9) {
+            return SymbolKind.Function
+          }
+          throw new TsServerLoadingError()
+        })
+
+        const editor = createMockEditor(["import { useState, MyClass } from 'mod'"])
+        await service.applyImportDecorations(editor)
+
+        // Partial decoration should be applied for useState
+        const calls = vi.mocked(editor.setDecorations).mock.calls
+        const decoratedCall = calls.find((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(decoratedCall).toBeDefined()
+
+        // Retry should be scheduled for MyClass
+        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(true)
+      })
+    })
   })
 
   describe('setColors', () => {
@@ -470,6 +588,17 @@ describe('DecorationService', () => {
       expect(() => service.dispose()).not.toThrow()
       expect(internals(service).decorationTypes.size).toBe(0)
       expect(internals(service).documentCaches.size).toBe(0)
+    })
+
+    it('should clear all pending retry timeouts', () => {
+      const timeout1 = setTimeout(() => {}, 1000)
+      const timeout2 = setTimeout(() => {}, 2000)
+      internals(service).retryTimeouts.set('file:///a.ts', timeout1)
+      internals(service).retryTimeouts.set('file:///b.ts', timeout2)
+
+      service.dispose()
+
+      expect(internals(service).retryTimeouts.size).toBe(0)
     })
   })
 
