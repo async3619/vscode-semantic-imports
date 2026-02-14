@@ -143,9 +143,9 @@ describe('HoverSymbolResolver', () => {
   })
 
   describe('tsserver loading detection', () => {
-    it('should throw TsServerLoadingError when hover text contains loading', async () => {
+    it('should throw TsServerLoadingError when hover text contains loading placeholder', async () => {
       vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('loading...')] },
+        { contents: [new vscode.MarkdownString('(loading...)')] },
       ])
       await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
     })
@@ -159,7 +159,7 @@ describe('HoverSymbolResolver', () => {
 
     it('should log loading detection to output channel', async () => {
       vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('loading...')] },
+        { contents: [new vscode.MarkdownString('(loading...)')] },
       ])
       await resolver.resolve(createMockDocument(), createMockPosition(2, 5)).catch(() => {})
       expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(
