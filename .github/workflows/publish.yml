@@ -26,9 +26,11 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          pnpm package
+          pnpm run build
           if [[ "${{ github.ref_name }}" == *-* ]]; then
+            pnpm exec vsce package --no-dependencies --pre-release
             pnpm exec vsce publish --no-dependencies --packagePath *.vsix --pre-release
           else
+            pnpm exec vsce package --no-dependencies
             pnpm exec vsce publish --no-dependencies --packagePath *.vsix
           fi
