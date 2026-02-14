@@ -1,23 +1,76 @@
 import * as vscode from 'vscode'
 import { parseImports } from './importParser'
 
-const decorationType = vscode.window.createTextEditorDecorationType({
-  color: '#000000',
-})
+// Colors from VS Code Light theme
+const KIND_COLORS: Record<string, string> = {
+  function: '#800000',
+  class: '#008080',
+  interface: '#008080',
+  type: '#008080',
+  enum: '#008080',
+  namespace: '#008080',
+  module: '#008080',
+  variable: '#000080',
+  const: '#000080',
+  let: '#000080',
+}
 
-export function applyImportDecorations(editor: vscode.TextEditor): void {
+const DEFAULT_COLOR = '#000000'
+
+const decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
+
+function getDecorationType(color: string): vscode.TextEditorDecorationType {
+  let type = decorationTypes.get(color)
+  if (!type) {
+    type = vscode.window.createTextEditorDecorationType({ color })
+    decorationTypes.set(color, type)
+  }
+  return type
+}
+
+async function resolveSymbolKind(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): Promise<string | undefined> {
+  const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+    'vscode.executeHoverProvider',
+    document.uri,
+    position,
+  )
+
+  if (!hovers || hovers.length === 0) return undefined
+
+  for (const hover of hovers) {
+    for (const content of hover.contents) {
+      const text = content instanceof vscode.MarkdownString ? content.value : String(content)
+      const match = text.match(/\(alias\)\s+(function|class|interface|type|enum|namespace|const|let|var|module)\b/)
+      if (match) return match[1]
+    }
+  }
+
+  return undefined
+}
+
+interface SymbolOccurrence {
+  symbol: string
+  range: vscode.Range
+}
+
+export async function applyImportDecorations(editor: vscode.TextEditor): Promise<void> {
   const document = editor.document
   const text = document.getText()
   const { symbols, importEndLine } = parseImports(text)
 
-  if (symbols.length === 0) {
-    editor.setDecorations(decorationType, [])
-    return
+  // Clear all existing decorations
+  for (const type of decorationTypes.values()) {
+    editor.setDecorations(type, [])
   }
+
+  if (symbols.length === 0) return
 
   const escapedSymbols = symbols.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   const pattern = new RegExp(`\\b(${escapedSymbols.join('|')})\\b`, 'g')
-  const ranges: vscode.Range[] = []
+  const occurrences: SymbolOccurrence[] = []
 
   for (let lineIndex = 0; lineIndex < importEndLine; lineIndex++) {
     const lineText = document.lineAt(lineIndex).text
@@ -27,17 +80,43 @@ export function applyImportDecorations(editor: vscode.TextEditor): void {
     while ((match = pattern.exec(lineText)) !== null) {
       const startPos = new vscode.Position(lineIndex, match.index)
       const endPos = new vscode.Position(lineIndex, match.index + match[0].length)
-      ranges.push(new vscode.Range(startPos, endPos))
+      occurrences.push({ symbol: match[0], range: new vscode.Range(startPos, endPos) })
     }
   }
 
-  editor.setDecorations(decorationType, ranges)
-}
+  // Resolve kind for each unique symbol in parallel
+  const symbolKinds = new Map<string, string>()
+  const uniqueSymbols = [...new Set(occurrences.map((o) => o.symbol))]
 
-export function clearImportDecorations(editor: vscode.TextEditor): void {
-  editor.setDecorations(decorationType, [])
+  await Promise.all(
+    uniqueSymbols.map(async (symbol) => {
+      const occurrence = occurrences.find((o) => o.symbol === symbol)
+      if (!occurrence) return
+      const kind = await resolveSymbolKind(document, occurrence.range.start)
+      if (kind) symbolKinds.set(symbol, kind)
+    }),
+  )
+
+  // Group ranges by color
+  const rangesByColor = new Map<string, vscode.Range[]>()
+
+  for (const { symbol, range } of occurrences) {
+    const kind = symbolKinds.get(symbol)
+    const color = kind ? (KIND_COLORS[kind] ?? DEFAULT_COLOR) : DEFAULT_COLOR
+    const ranges = rangesByColor.get(color) ?? []
+    ranges.push(range)
+    rangesByColor.set(color, ranges)
+  }
+
+  // Apply decorations
+  for (const [color, ranges] of rangesByColor) {
+    editor.setDecorations(getDecorationType(color), ranges)
+  }
 }
 
 export function disposeDecorations(): void {
-  decorationType.dispose()
+  for (const type of decorationTypes.values()) {
+    type.dispose()
+  }
+  decorationTypes.clear()
 }
