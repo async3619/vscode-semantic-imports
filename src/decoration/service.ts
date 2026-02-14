@@ -1,15 +1,24 @@
 import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
-import { HoverSymbolResolver, SemanticTokenSymbolResolver, QuickInfoSymbolResolver } from '../symbol'
+import {
+  HoverSymbolResolver,
+  SemanticTokenSymbolResolver,
+  QuickInfoSymbolResolver,
+  TsServerLoadingError,
+} from '../symbol'
 import type { SymbolColorMap } from '../theme'
 import type { DocumentCache, SymbolOccurrence } from './types'
+
+const MAX_RETRIES = 5
+const RETRY_DELAY_MS = 500
 
 export class DecorationService implements vscode.Disposable {
   private readonly output: vscode.OutputChannel
   private readonly resolvers: BaseSymbolResolver[]
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
+  private readonly retryTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
   private colors: SymbolColorMap
 
   constructor(colors: SymbolColorMap = {}, output: vscode.OutputChannel) {
@@ -30,8 +39,13 @@ export class DecorationService implements vscode.Disposable {
     this.decorationTypes.clear()
   }
 
-  async applyImportDecorations(editor: vscode.TextEditor) {
+  async applyImportDecorations(editor: vscode.TextEditor, retryCount = 0) {
     const document = editor.document
+    const docUri = document.uri.toString()
+
+    // Cancel any pending retry for this document
+    this.cancelRetry(docUri)
+
     const text = document.getText()
     const { symbols, importEndLine } = parseImports(text)
 
@@ -65,7 +79,6 @@ export class DecorationService implements vscode.Disposable {
     }
 
     // Resolve kind for each unique symbol, using cache when possible
-    const docUri = document.uri.toString()
     const importSectionText = text.split('\n').slice(0, importEndLine).join('\n')
     const cached = this.documentCaches.get(docUri)
     const symbolKinds = new Map<string, SymbolKind>()
@@ -83,6 +96,8 @@ export class DecorationService implements vscode.Disposable {
         symbolsToResolve.push(symbol)
       }
     }
+
+    let tsServerLoading = false
 
     if (symbolsToResolve.length > 0) {
       this.output.appendLine(
@@ -106,8 +121,10 @@ export class DecorationService implements vscode.Disposable {
                 break
               }
             }
-          } catch {
-            // Resolution may fail for this symbol; skip decoration
+          } catch (error) {
+            if (error instanceof TsServerLoadingError) {
+              tsServerLoading = true
+            }
           }
         }),
       )
@@ -131,22 +148,48 @@ export class DecorationService implements vscode.Disposable {
       rangesByColor.set(color, ranges)
     }
 
-    // Apply decorations
+    // Apply decorations (partial results applied immediately)
     for (const [color, ranges] of rangesByColor) {
       editor.setDecorations(this.getDecorationType(color), ranges)
+    }
+
+    // Schedule retry if tsserver was loading and retries remain
+    if (tsServerLoading && retryCount < MAX_RETRIES) {
+      const delay = RETRY_DELAY_MS * (retryCount + 1)
+      this.output.appendLine(`[retry] scheduling retry ${retryCount + 1}/${MAX_RETRIES} in ${delay}ms for ${docUri}`)
+      const timeout = setTimeout(() => {
+        this.retryTimeouts.delete(docUri)
+        this.applyImportDecorations(editor, retryCount + 1).catch(() => {
+          // Retry may fail; silently ignore
+        })
+      }, delay)
+      this.retryTimeouts.set(docUri, timeout)
     }
   }
 
   clearDocumentCache(uri: string) {
+    this.cancelRetry(uri)
     this.documentCaches.delete(uri)
   }
 
   dispose() {
+    for (const timeout of this.retryTimeouts.values()) {
+      clearTimeout(timeout)
+    }
+    this.retryTimeouts.clear()
     for (const type of this.decorationTypes.values()) {
       type.dispose()
     }
     this.decorationTypes.clear()
     this.documentCaches.clear()
+  }
+
+  private cancelRetry(docUri: string) {
+    const existing = this.retryTimeouts.get(docUri)
+    if (existing) {
+      clearTimeout(existing)
+      this.retryTimeouts.delete(docUri)
+    }
   }
 
   private getDecorationType(color: string) {
