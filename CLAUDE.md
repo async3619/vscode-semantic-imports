@@ -100,3 +100,5 @@ PR은 **정의된 문제를 정해진 방법으로 해결**하는 과정이다. 
 - Print width: 120
 - Tab width: 2
 - Trailing commas: all
+- if문이 한 줄이어도 반드시 중괄호(`{}`)를 사용한다 (`curly: ['error', 'all']`)
+- 함수의 return type은 생략한다 (TypeScript 타입 추론에 위임). 단, body가 없는 abstract method 등은 예외
