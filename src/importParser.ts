@@ -5,7 +5,7 @@ export interface ParsedImports {
   importEndLine: number
 }
 
-export function parseImports(text: string): ParsedImports {
+export function parseImports(text: string) {
   const lines = text.split('\n')
   const symbols: string[] = []
   let importEndLine = 0
@@ -55,11 +55,11 @@ export function parseImports(text: string): ParsedImports {
   return { symbols: [...new Set(symbols)], importEndLine }
 }
 
-function isImportComplete(statement: string): boolean {
+function isImportComplete(statement: string) {
   return /from\s+['"][^'"]*['"]/.test(statement) || /^import\s+['"][^'"]*['"]/.test(statement.trim())
 }
 
-function parseImportStatement(statement: string): string[] {
+function parseImportStatement(statement: string) {
   const symbols: string[] = []
   const normalized = statement.replace(/\s+/g, ' ').trim()
 

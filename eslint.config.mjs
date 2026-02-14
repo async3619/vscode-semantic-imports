@@ -26,10 +26,15 @@ const eslintConfig = defineConfig([
     rules: {
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/explicit-function-return-type': 'warn',
+      '@typescript-eslint/explicit-function-return-type': 'off',
     },
   },
   prettierPlugin,
+  {
+    rules: {
+      curly: ['error', 'all'],
+    },
+  },
   globalIgnores(['dist/', 'node_modules/']),
 ])
 

@@ -1,18 +1,19 @@
 import * as vscode from 'vscode'
 import { BaseSymbolResolver } from '../types'
-import type { SymbolKind } from '../types'
 import { findTokenTypeAtPosition } from '../utils/findTokenTypeAtPosition'
 import { toSymbolKind } from '../utils/toSymbolKind'
 
 export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
-  async resolve(document: vscode.TextDocument, position: vscode.Position): Promise<SymbolKind | undefined> {
+  async resolve(document: vscode.TextDocument, position: vscode.Position) {
     const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
       'vscode.executeDefinitionProvider',
       document.uri,
       position,
     )
 
-    if (!definitions || definitions.length === 0) return undefined
+    if (!definitions || definitions.length === 0) {
+      return undefined
+    }
 
     const def = definitions[0]
     const targetUri = 'targetUri' in def ? def.targetUri : def.uri
@@ -33,7 +34,9 @@ export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
       vscode.commands.executeCommand<vscode.SemanticTokens>('vscode.provideDocumentSemanticTokens', targetUri),
     ])
 
-    if (!legend || !tokens) return undefined
+    if (!legend || !tokens) {
+      return undefined
+    }
 
     const tokenType = findTokenTypeAtPosition(tokens, legend, targetPos.line, targetPos.character)
     this.output.appendLine(`[semantic] ${targetPos.line}:${targetPos.character} → ${tokenType ?? 'unknown'}`)

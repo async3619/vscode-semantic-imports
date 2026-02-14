@@ -14,6 +14,6 @@ const SYMBOL_KIND_MAP: Partial<Record<string, SymbolKind>> = {
   var: SymbolKind.Variable,
 }
 
-export function toSymbolKind(raw: string): SymbolKind | undefined {
+export function toSymbolKind(raw: string) {
   return SYMBOL_KIND_MAP[raw]
 }

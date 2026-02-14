@@ -7,7 +7,7 @@ const DEFAULT_LEGEND: vscode.SemanticTokensLegend = {
   tokenModifiers: [],
 } as unknown as vscode.SemanticTokensLegend
 
-function createTokenData(tokens: Array<[line: number, char: number, length: number, typeIndex: number]>): Uint32Array {
+function createTokenData(tokens: Array<[line: number, char: number, length: number, typeIndex: number]>) {
   const data: number[] = []
   let prevLine = 0
   let prevChar = 0
