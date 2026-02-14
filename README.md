@@ -15,11 +15,11 @@
     <a href="https://marketplace.visualstudio.com/items?itemName=async3619.vscode-semantic-imports">
         <img alt="Visual Studio Marketplace Version" src="https://img.shields.io/visual-studio-marketplace/v/async3619.vscode-semantic-imports?style=flat-square&label=marketplace" />
     </a>
-    <a href="https://marketplace.visualstudio.com/items?itemName=async3619.vscode-semantic-imports">
-        <img alt="Visual Studio Marketplace Installs" src="https://img.shields.io/visual-studio-marketplace/i/async3619.vscode-semantic-imports?style=flat-square" />
-    </a>
     <a href="https://github.com/async3619/vscode-semantic-imports/blob/main/LICENSE">
         <img alt="License" src="https://img.shields.io/github/license/async3619/vscode-semantic-imports?style=flat-square" />
+    </a>
+    <a href="https://codecov.io/gh/async3619/vscode-semantic-imports">
+        <img alt="Codecov" src="https://img.shields.io/codecov/c/github/async3619/vscode-semantic-imports?style=flat-square" />
     </a>
     <br />
     <sup>Accurate syntax highlighting for imported symbols in TypeScript</sup>
