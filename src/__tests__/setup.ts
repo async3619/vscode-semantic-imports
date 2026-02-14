@@ -45,6 +45,17 @@ class MockUri {
     }
     return new MockUri('file', value)
   }
+
+  static joinPath(base: MockUri, ...segments: string[]) {
+    const basePath = base.path.endsWith('/') ? base.path.slice(0, -1) : base.path
+    const joined = segments.reduce((acc, seg) => {
+      if (seg.startsWith('./')) {
+        seg = seg.slice(2)
+      }
+      return acc + '/' + seg
+    }, basePath)
+    return new MockUri(base.scheme, joined)
+  }
 }
 
 vi.mock('vscode', () => ({
@@ -67,11 +78,22 @@ vi.mock('vscode', () => ({
     visibleTextEditors: [] as unknown[],
     activeTextEditor: undefined as unknown,
     onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
+    onDidChangeActiveColorTheme: vi.fn(() => ({ dispose: vi.fn() })),
   },
   workspace: {
     openTextDocument: vi.fn(async () => ({})),
     onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
     onDidCloseTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+    getConfiguration: vi.fn(() => ({
+      get: vi.fn(),
+    })),
+    fs: {
+      readFile: vi.fn(),
+    },
+  },
+  extensions: {
+    all: [] as unknown[],
+    onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
   },
   commands: {
     executeCommand: vi.fn(),

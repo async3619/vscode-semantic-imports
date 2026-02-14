@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { DecorationService } from './service'
-import { DEFAULT_COLOR, KIND_COLORS } from './constants'
 import type { DocumentCache } from './types'
 import type { BaseSymbolResolver } from '../symbol'
 import { SymbolKind } from '../symbol'
+import type { SymbolColorMap } from '../theme'
 
 vi.mock('../importParser', () => ({
   parseImports: vi.fn(),
@@ -13,15 +13,25 @@ vi.mock('../importParser', () => ({
 import { parseImports } from '../importParser'
 
 type ServiceInternals = {
-  output: vscode.OutputChannel
   resolvers: BaseSymbolResolver[]
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
   documentCaches: Map<string, DocumentCache>
+  colors: SymbolColorMap
   getDecorationType: (color: string) => vscode.TextEditorDecorationType
 }
 
 function internals(service: DecorationService) {
   return service as unknown as ServiceInternals
+}
+
+const TEST_COLORS: SymbolColorMap = {
+  [SymbolKind.Function]: '#DCDCAA',
+  [SymbolKind.Class]: '#4EC9B0',
+  [SymbolKind.Interface]: '#4EC9B0',
+  [SymbolKind.Type]: '#4EC9B0',
+  [SymbolKind.Enum]: '#4EC9B0',
+  [SymbolKind.Namespace]: '#4EC9B0',
+  [SymbolKind.Variable]: '#9CDCFE',
 }
 
 function createMockEditor(lines: string[]) {
@@ -36,11 +46,23 @@ function createMockEditor(lines: string[]) {
   } as unknown as vscode.TextEditor
 }
 
+function createMockOutput() {
+  return {
+    appendLine: vi.fn(),
+    append: vi.fn(),
+    clear: vi.fn(),
+    show: vi.fn(),
+    dispose: vi.fn(),
+  } as unknown as vscode.OutputChannel
+}
+
 describe('DecorationService', () => {
   let service: DecorationService
+  let output: vscode.OutputChannel
 
   beforeEach(() => {
-    service = new DecorationService()
+    output = createMockOutput()
+    service = new DecorationService(TEST_COLORS, output)
     vi.mocked(parseImports).mockReset()
     vi.mocked(vscode.commands.executeCommand).mockReset()
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
@@ -152,29 +174,30 @@ describe('DecorationService', () => {
         expect(spy).toHaveBeenCalledTimes(2)
       })
 
-      it('should use DEFAULT_COLOR when resolver returns undefined', async () => {
+      it('should skip decoration when resolver returns undefined', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['unknown'], importEndLine: 1 })
 
         const editor = createMockEditor(["import { unknown } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({ color: DEFAULT_COLOR })
+        // No decoration type should be created for unresolved symbols
+        expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
       })
 
-      it('should use DEFAULT_COLOR when resolver throws', async () => {
+      it('should skip decoration when resolver throws', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['failing'], importEndLine: 1 })
         vi.spyOn(internals(service).resolvers[0], 'resolve').mockRejectedValue(new Error('resolution failed'))
 
         const editor = createMockEditor(["import { failing } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        // Should not throw, and should apply default color
-        expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({ color: DEFAULT_COLOR })
+        // Should not throw, and should not apply any decoration
+        expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
       })
     })
 
     describe('color mapping', () => {
-      it('should map function kind to KIND_COLORS.function', async () => {
+      it('should map function kind to the injected function color', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], importEndLine: 1 })
         vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
 
@@ -182,7 +205,7 @@ describe('DecorationService', () => {
         await service.applyImportDecorations(editor)
 
         expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
-          color: KIND_COLORS[SymbolKind.Function],
+          color: TEST_COLORS[SymbolKind.Function],
         })
       })
 
@@ -212,6 +235,43 @@ describe('DecorationService', () => {
           .mocked(editor.setDecorations)
           .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
         expect(setDecorationsCalls.length).toBe(2)
+      })
+
+      it('should skip symbols whose kind has no color in the map', async () => {
+        const partialColors: SymbolColorMap = { [SymbolKind.Function]: '#DCDCAA' }
+        service = new DecorationService(partialColors, output)
+        for (const resolver of internals(service).resolvers) {
+          vi.spyOn(resolver, 'resolve').mockResolvedValue(undefined)
+        }
+
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[1], 'resolve').mockImplementation(async (_doc, pos) => {
+          return pos.character < 14 ? SymbolKind.Function : SymbolKind.Class
+        })
+
+        const editor = createMockEditor(["import { myFn, MyClass } from 'mod'"])
+        await service.applyImportDecorations(editor)
+
+        // Only function should be decorated (Class has no color)
+        const setDecorationsCalls = vi
+          .mocked(editor.setDecorations)
+          .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(setDecorationsCalls.length).toBe(1)
+      })
+
+      it('should not apply any decorations when colors map is empty', async () => {
+        service = new DecorationService({}, output)
+        for (const resolver of internals(service).resolvers) {
+          vi.spyOn(resolver, 'resolve').mockResolvedValue(undefined)
+        }
+
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], importEndLine: 1 })
+        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+
+        const editor = createMockEditor(["import { myFn } from 'mod'"])
+        await service.applyImportDecorations(editor)
+
+        expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
       })
     })
 
@@ -244,7 +304,7 @@ describe('DecorationService', () => {
         await service.applyImportDecorations(editor)
 
         expect(spy).not.toHaveBeenCalled()
-        expect(internals(service).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[cache] full hit'))
+        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[cache] full hit'))
       })
 
       it('should invalidate cache when importSectionText changes', async () => {
@@ -281,7 +341,7 @@ describe('DecorationService', () => {
 
         // Only useEffect should be resolved, not useState
         expect(spy).toHaveBeenCalledTimes(1)
-        expect(internals(service).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('resolving 1/2'))
+        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('resolving 1/2'))
       })
 
       it('should update cache after resolving new symbols', async () => {
@@ -303,6 +363,40 @@ describe('DecorationService', () => {
         expect(cached!.symbolKinds.get('useState')).toBe(SymbolKind.Function)
         expect(cached!.symbolKinds.get('useEffect')).toBe(SymbolKind.Function)
       })
+    })
+  })
+
+  describe('setColors', () => {
+    it('should update the colors map', () => {
+      const newColors: SymbolColorMap = { [SymbolKind.Function]: '#FF0000' }
+      service.setColors(newColors)
+      expect(internals(service).colors).toBe(newColors)
+    })
+
+    it('should dispose existing decoration types', () => {
+      const dispose1 = vi.fn()
+      const dispose2 = vi.fn()
+      internals(service).decorationTypes.set('#aaa', {
+        dispose: dispose1,
+      } as unknown as vscode.TextEditorDecorationType)
+      internals(service).decorationTypes.set('#bbb', {
+        dispose: dispose2,
+      } as unknown as vscode.TextEditorDecorationType)
+
+      service.setColors({})
+
+      expect(dispose1).toHaveBeenCalledOnce()
+      expect(dispose2).toHaveBeenCalledOnce()
+    })
+
+    it('should clear the decoration types map', () => {
+      internals(service).decorationTypes.set('#aaa', {
+        dispose: vi.fn(),
+      } as unknown as vscode.TextEditorDecorationType)
+
+      service.setColors({})
+
+      expect(internals(service).decorationTypes.size).toBe(0)
     })
   })
 
@@ -366,10 +460,10 @@ describe('DecorationService', () => {
       expect(internals(service).documentCaches.size).toBe(0)
     })
 
-    it('should dispose the output channel', () => {
+    it('should not dispose the output channel (owned by extension)', () => {
       service.dispose()
 
-      expect(internals(service).output.dispose).toHaveBeenCalledOnce()
+      expect(output.dispose).not.toHaveBeenCalled()
     })
 
     it('should handle empty state gracefully', () => {
