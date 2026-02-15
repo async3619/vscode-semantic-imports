@@ -118,7 +118,7 @@ export class DecorationService implements vscode.Disposable {
             for (const resolver of this.resolvers) {
               const kind = await resolver.resolve(document, pos)
               if (kind) {
-                this.output.appendLine(`[resolved] ${symbol} → ${kind}`)
+                this.output.appendLine(`[result] \`${symbol}\` -> \`${kind}\` (${resolver.name})`)
                 symbolKinds.set(symbol, kind)
                 break
               }

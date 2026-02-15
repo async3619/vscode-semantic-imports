@@ -13,6 +13,8 @@ interface PluginQuickInfoResponse {
 }
 
 export class PluginSymbolResolver extends BaseSymbolResolver {
+  readonly name = 'plugin'
+
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
     const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
       'vscode.executeDefinitionProvider',
