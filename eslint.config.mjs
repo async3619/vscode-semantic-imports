@@ -9,7 +9,19 @@ const eslintConfig = defineConfig([
     languageOptions: {
       parser: tsparser,
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: [
+            'src/*.test.ts',
+            'src/decoration/*.test.ts',
+            'src/symbol/*.test.ts',
+            'src/symbol/utils/*.test.ts',
+            'src/symbol/resolvers/*.test.ts',
+            'src/theme/*.test.ts',
+            'src/tsPlugin/*.test.ts',
+            'src/theme/utils/*.test.ts',
+          ],
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 20,
+        },
       },
     },
     plugins: {
@@ -18,11 +30,16 @@ const eslintConfig = defineConfig([
     rules: {
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/explicit-function-return-type': 'warn',
+      '@typescript-eslint/explicit-function-return-type': 'off',
     },
   },
   prettierPlugin,
-  globalIgnores(['dist/', 'node_modules/']),
+  {
+    rules: {
+      curly: ['error', 'all'],
+    },
+  },
+  globalIgnores(['dist/', 'node_modules/', 'tsPlugin/index.js']),
 ])
 
 export default eslintConfig

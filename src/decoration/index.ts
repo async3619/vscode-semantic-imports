@@ -1,0 +1,1 @@
+export { DecorationService } from './service'

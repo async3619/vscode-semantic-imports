@@ -1,0 +1,52 @@
+{
+  "branches": ["main", { "name": "dev", "prerelease": "dev" }],
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalCommits"
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalCommits",
+        "presetConfig": {
+          "types": [
+            { "type": "feat", "section": "Features ✨" },
+            { "type": "fix", "section": "Bug Fixes 🐞" },
+            { "type": "perf", "section": "Performance 🚀" },
+            { "type": "refactor", "section": "Internal 🧰" },
+            { "type": "chore", "section": "Internal 🧰", "hidden": true },
+            { "type": "docs", "section": "Documentation 📝", "hidden": true },
+            { "type": "style", "section": "Internal 🧰", "hidden": true },
+            { "type": "test", "section": "Internal 🧰", "hidden": true },
+            { "type": "build", "section": "Internal 🧰", "hidden": true },
+            { "type": "ci", "section": "Internal 🧰", "hidden": true }
+          ]
+        }
+      }
+    ],
+    ["@semantic-release/npm", { "npmPublish": false }],
+    [
+      "@semantic-release/git",
+      {
+        "message": "chore(📦): ${nextRelease.version}\n\n${nextRelease.notes}",
+        "assets": ["package.json"]
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "bash scripts/vsce-package.sh ${nextRelease.version}",
+        "publishCmd": "bash scripts/vsce-publish.sh ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [{ "path": "*.vsix", "label": "VS Code Extension (${nextRelease.version})" }]
+      }
+    ]
+  ]
+}
