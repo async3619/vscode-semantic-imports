@@ -29,12 +29,17 @@
 
 ## Introduction
 
+|             Before             |            After             |
+| :----------------------------: | :--------------------------: |
+| ![Before](./assets/before.png) | ![After](./assets/after.png) |
+
 VS Code's built-in syntax highlighting treats all identifiers the same way, regardless of whether they are locally defined or imported from external modules. This extension solves this by analyzing import statements and applying precise, type-aware coloring to every usage of imported symbols throughout your file.
 
 This means you can visually distinguish imported functions, classes, types, and variables at a glance — making your code easier to read and navigate.
 
 ## Features
 
+- **Fast** — Resolves symbol types through a TypeScript Server plugin running inside tsserver, avoiding expensive external API calls
 - **Type-aware coloring** — Imported symbols are colored based on their resolved type (function, class, interface, etc.), not just their text
 - **Zero configuration** — Automatically reads your active color theme and applies matching colors to imported symbols. Supports both semantic token colors and TextMate rules, and also respects your custom color settings (`editor.semanticTokenColorCustomizations`, `editor.tokenColorCustomizations`). When you switch themes, colors update instantly — no settings to configure
 
