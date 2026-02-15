@@ -50,9 +50,10 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
       return undefined
     }
 
-    this.output.appendLine(`[plugin] ${JSON.stringify(result)}`)
-
     const response = result?.body?.[RESPONSE_KEY] as PluginResponse | undefined
+    if (response) {
+      this.output.appendLine(`[plugin] ${JSON.stringify(response)}`)
+    }
     if (!response) {
       return undefined
     }
@@ -68,6 +69,6 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
       return SymbolKind.Function
     }
 
-    return SymbolKind.Variable
+    return undefined
   }
 }

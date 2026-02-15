@@ -104,13 +104,13 @@ describe('PluginSymbolResolver', () => {
     expect(result).toBe(SymbolKind.Function)
   })
 
-  it('should return Variable when response indicates isFunction=false', async () => {
+  it('should return undefined when response indicates isFunction=false', async () => {
     mockPluginResolution({
       definitions: [createMockLocation()],
       completionInfo: createCompletionInfoWithResponse({ id: 'resolve', isFunction: false }),
     })
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBe(SymbolKind.Variable)
+    expect(result).toBeUndefined()
   })
 
   it('should return undefined when response is an error', async () => {
@@ -180,7 +180,7 @@ describe('PluginSymbolResolver', () => {
     })
 
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBe(SymbolKind.Variable)
+    expect(result).toBeUndefined()
   })
 
   it('should log plugin resolution to output channel', async () => {

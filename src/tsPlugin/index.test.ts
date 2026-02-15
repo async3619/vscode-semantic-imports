@@ -103,7 +103,7 @@ describe('tsPlugin', () => {
     expect(response).toEqual({ id: 'resolve', isFunction: true })
   })
 
-  it('should return resolve response with isFunction=true when type has construct signatures', () => {
+  it('should return resolve response with isFunction=false when type has only construct signatures', () => {
     const { proxy } = setupPlugin({
       program: { type: createMockType(0, 1) },
     })
@@ -113,7 +113,7 @@ describe('tsPlugin', () => {
     })
 
     const response = getResponse(result)
-    expect(response).toEqual({ id: 'resolve', isFunction: true })
+    expect(response).toEqual({ id: 'resolve', isFunction: false })
   })
 
   it('should return resolve response with isFunction=false when type has no signatures', () => {

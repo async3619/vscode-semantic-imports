@@ -25,8 +25,7 @@ function init(modules: { typescript: TypeScript }) {
 
       const request = possiblePayload as unknown as PluginRequest
 
-      let prior = oldLS.getCompletionsAtPosition(fileName, position, undefined, undefined)
-      prior ??= {
+      const prior: tslib.CompletionInfo = {
         isGlobalCompletion: false,
         isMemberCompletion: false,
         isNewIdentifierLocation: false,
@@ -90,7 +89,7 @@ function handleResolve(ts: TypeScript, ls: tslib.LanguageService, fileName: stri
   }
 
   const type = typeChecker.getTypeOfSymbolAtLocation(symbol, node)
-  const isFunction = type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0
+  const isFunction = type.getCallSignatures().length > 0
 
   return { id: 'resolve', isFunction }
 }
