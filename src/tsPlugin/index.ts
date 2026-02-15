@@ -63,9 +63,7 @@ function handleRequest(
 ): PluginResponse {
   switch (request.id) {
     case 'resolve':
-      const data = handleResolve(ts, ls, fileName, position)
-      console.log(`[plugin] handleRequest: ${JSON.stringify({ fileName, position, request, data })}`)
-      return data
+      return handleResolve(ts, ls, fileName, position)
   }
 }
 
