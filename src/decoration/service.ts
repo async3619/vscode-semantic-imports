@@ -1,13 +1,7 @@
 import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
-import {
-  HoverSymbolResolver,
-  PluginSymbolResolver,
-  SemanticTokenSymbolResolver,
-  QuickInfoSymbolResolver,
-  TsServerLoadingError,
-} from '../symbol'
+import { PluginSymbolResolver, TsServerLoadingError } from '../symbol'
 import type { SymbolColorMap } from '../theme'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
@@ -25,12 +19,7 @@ export class DecorationService implements vscode.Disposable {
   constructor(colors: SymbolColorMap = {}, output: vscode.OutputChannel) {
     this.output = output
     this.colors = colors
-    this.resolvers = [
-      new HoverSymbolResolver(this.output),
-      new PluginSymbolResolver(this.output),
-      new SemanticTokenSymbolResolver(this.output),
-      new QuickInfoSymbolResolver(this.output),
-    ]
+    this.resolvers = [new PluginSymbolResolver(this.output)]
   }
 
   setColors(colors: SymbolColorMap) {

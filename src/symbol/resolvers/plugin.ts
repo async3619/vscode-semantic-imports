@@ -1,15 +1,9 @@
 import * as vscode from 'vscode'
-import { TAG_NAME, type PluginTagData } from '../../tsPlugin/protocol'
+import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
 import { SymbolKind, BaseSymbolResolver } from '../types'
-import { toSymbolKind } from '../utils/toSymbolKind'
 
-interface PluginQuickInfoResponse {
-  body?: {
-    kind: string
-    kindModifiers: string
-    displayString: string
-    tags?: { name: string; text?: string }[]
-  }
+interface CompletionInfoResponse {
+  body?: Record<string, unknown>
 }
 
 export class PluginSymbolResolver extends BaseSymbolResolver {
@@ -35,39 +29,45 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
       return undefined
     }
 
-    const result = await vscode.commands.executeCommand<PluginQuickInfoResponse>(
-      'typescript.tsserverRequest',
-      'quickinfo',
-      {
-        file: targetUri.fsPath,
-        line: targetPos.line + 1,
-        offset: targetPos.character + 1,
-      },
+    this.output.appendLine(
+      `[plugin] ${position.line}:${position.character} → def ${targetUri.fsPath}:${targetPos.line}:${targetPos.character}`,
     )
 
-    const tag = result?.body?.tags?.find((t) => t.name === TAG_NAME)
-    if (!tag?.text) {
-      return undefined
-    }
-
-    let data: PluginTagData
+    let result: CompletionInfoResponse | undefined
     try {
-      data = JSON.parse(tag.text)
-    } catch {
+      result = await vscode.commands.executeCommand<CompletionInfoResponse>(
+        'typescript.tsserverRequest',
+        'completionInfo',
+        {
+          file: targetUri.fsPath,
+          line: targetPos.line + 1,
+          offset: targetPos.character + 1,
+          triggerCharacter: { id: 'resolve' },
+        },
+      )
+    } catch (e) {
+      this.output.appendLine(`[plugin] completionInfo threw: ${e instanceof Error ? e.message : String(e)}`)
       return undefined
     }
 
-    this.output.appendLine(`[plugin] ${position.line}:${position.character} → isFunction=${data.isFunction}`)
+    this.output.appendLine(`[plugin] ${JSON.stringify(result)}`)
 
-    if (data.isFunction) {
+    const response = result?.body?.[RESPONSE_KEY] as PluginResponse | undefined
+    if (!response) {
+      return undefined
+    }
+
+    if (response.id === 'error') {
+      this.output.appendLine(`[plugin] error: ${response.error.message}`)
+      return undefined
+    }
+
+    this.output.appendLine(`[plugin] ${position.line}:${position.character} → isFunction=${response.isFunction}`)
+
+    if (response.isFunction) {
       return SymbolKind.Function
     }
 
-    const kind = result?.body?.kind
-    if (!kind) {
-      return SymbolKind.Variable
-    }
-
-    return toSymbolKind(kind) ?? SymbolKind.Variable
+    return SymbolKind.Variable
   }
 }

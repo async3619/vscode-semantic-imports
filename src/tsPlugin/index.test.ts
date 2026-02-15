@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import type tslib from 'typescript/lib/tsserverlibrary'
 import init from './index'
-import { TAG_NAME, type PluginTagData } from './protocol'
+import { RESPONSE_KEY, type PluginResponse } from './protocol'
 
 function createMockLanguageService(overrides: Partial<tslib.LanguageService> = {}) {
   const ls: Partial<tslib.LanguageService> = {
-    getQuickInfoAtPosition: vi.fn(),
+    getCompletionsAtPosition: vi.fn(),
     getProgram: vi.fn(),
     ...overrides,
   }
@@ -16,16 +16,6 @@ function createMockPluginCreateInfo(ls: tslib.LanguageService) {
   return { languageService: ls } as tslib.server.PluginCreateInfo
 }
 
-function createMockQuickInfo(overrides: Partial<tslib.QuickInfo> = {}): tslib.QuickInfo {
-  return {
-    kind: '' as tslib.ScriptElementKind,
-    kindModifiers: '',
-    textSpan: { start: 0, length: 0 },
-    tags: [],
-    ...overrides,
-  }
-}
-
 function createMockType(callSignatures = 0, constructSignatures = 0) {
   return {
     getCallSignatures: () => Array(callSignatures).fill({}),
@@ -33,9 +23,13 @@ function createMockType(callSignatures = 0, constructSignatures = 0) {
   }
 }
 
+function getResponse(result: tslib.WithMetadata<tslib.CompletionInfo> | undefined) {
+  return (result as unknown as Record<string, unknown>)?.[RESPONSE_KEY] as PluginResponse | undefined
+}
+
 describe('tsPlugin', () => {
   function setupPlugin(options: {
-    quickInfo?: tslib.QuickInfo | undefined
+    completions?: tslib.WithMetadata<tslib.CompletionInfo> | undefined
     program?: {
       sourceFile?: { getStart: () => number; getEnd: () => number }
       type?: ReturnType<typeof createMockType>
@@ -61,7 +55,7 @@ describe('tsPlugin', () => {
     }
 
     const ls = createMockLanguageService({
-      getQuickInfoAtPosition: vi.fn(() => options.quickInfo),
+      getCompletionsAtPosition: vi.fn(() => options.completions),
       getProgram: vi.fn(() =>
         options.program !== undefined ? mockProgram : undefined,
       ) as tslib.LanguageService['getProgram'],
@@ -83,100 +77,115 @@ describe('tsPlugin', () => {
     return { proxy, ls, mockTypeChecker }
   }
 
-  it('should return undefined when original quickinfo returns undefined', () => {
-    const { proxy } = setupPlugin({ quickInfo: undefined })
-    const result = proxy.getQuickInfoAtPosition('test.ts', 0)
-    expect(result).toBeUndefined()
+  it('should pass through when triggerCharacter is undefined', () => {
+    const { proxy, ls } = setupPlugin({ completions: undefined })
+    proxy.getCompletionsAtPosition('test.ts', 0, undefined)
+    expect(ls.getCompletionsAtPosition).toHaveBeenCalledWith('test.ts', 0, undefined, undefined)
   })
 
-  it('should return prior unchanged when program is unavailable', () => {
-    const quickInfo = createMockQuickInfo()
-    const { proxy } = setupPlugin({ quickInfo })
+  it('should pass through when triggerCharacter is a string', () => {
+    const options = { triggerCharacter: '.' as tslib.CompletionsTriggerCharacter }
+    const { proxy, ls } = setupPlugin({ completions: undefined })
+    proxy.getCompletionsAtPosition('test.ts', 0, options)
+    expect(ls.getCompletionsAtPosition).toHaveBeenCalledWith('test.ts', 0, options, undefined)
+  })
 
-    const result = proxy.getQuickInfoAtPosition('test.ts', 0)
+  it('should return resolve response with isFunction=true when type has call signatures', () => {
+    const { proxy } = setupPlugin({
+      program: { type: createMockType(1, 0) },
+    })
+
+    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
+      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    })
+
+    const response = getResponse(result)
+    expect(response).toEqual({ id: 'resolve', isFunction: true })
+  })
+
+  it('should return resolve response with isFunction=true when type has construct signatures', () => {
+    const { proxy } = setupPlugin({
+      program: { type: createMockType(0, 1) },
+    })
+
+    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
+      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    })
+
+    const response = getResponse(result)
+    expect(response).toEqual({ id: 'resolve', isFunction: true })
+  })
+
+  it('should return resolve response with isFunction=false when type has no signatures', () => {
+    const { proxy } = setupPlugin({
+      program: { type: createMockType(0, 0) },
+    })
+
+    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
+      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    })
+
+    const response = getResponse(result)
+    expect(response).toEqual({ id: 'resolve', isFunction: false })
+  })
+
+  it('should return error response when program is unavailable', () => {
+    const { proxy } = setupPlugin({})
+
+    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
+      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    })
+
+    const response = getResponse(result)
+    expect(response).toMatchObject({ id: 'error', error: { message: 'no program' } })
+  })
+
+  it('should return error response when symbol is not found', () => {
+    const { proxy } = setupPlugin({
+      program: { symbol: undefined, type: createMockType(1, 0) },
+    })
+
+    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
+      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    })
+
+    const response = getResponse(result)
+    expect(response).toMatchObject({ id: 'error', error: { message: 'no symbol' } })
+  })
+
+  it('should create fallback CompletionInfo when original returns undefined', () => {
+    const { proxy } = setupPlugin({
+      completions: undefined,
+      program: { type: createMockType(1, 0) },
+    })
+
+    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
+      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    })
+
     expect(result).toBeDefined()
+    expect(result!.entries).toEqual([])
+    expect(getResponse(result)).toEqual({ id: 'resolve', isFunction: true })
   })
 
-  it('should inject isFunction=true tag when type has call signatures', () => {
-    const quickInfo = createMockQuickInfo({ tags: [] })
-    const { proxy } = setupPlugin({
-      quickInfo,
-      program: {
-        type: createMockType(1, 0),
-      },
+  it('should catch exceptions and return error response', () => {
+    const ls = createMockLanguageService({
+      getCompletionsAtPosition: vi.fn(() => undefined),
+      getProgram: vi.fn(() => {
+        throw new Error('unexpected failure')
+      }) as tslib.LanguageService['getProgram'],
     })
 
-    const result = proxy.getQuickInfoAtPosition('test.ts', 0)!
-    const tag = result.tags?.find((t) => t.name === TAG_NAME)
+    const mockTs = { forEachChild: vi.fn() } as unknown as typeof tslib
+    const plugin = init({ typescript: mockTs })
+    const proxy = plugin.create(createMockPluginCreateInfo(ls))
 
-    expect(tag).toBeDefined()
-    const data: PluginTagData = JSON.parse(tag!.text![0].text)
-    expect(data.isFunction).toBe(true)
-  })
-
-  it('should inject isFunction=true tag when type has construct signatures', () => {
-    const quickInfo = createMockQuickInfo({ tags: [] })
-    const { proxy } = setupPlugin({
-      quickInfo,
-      program: {
-        type: createMockType(0, 1),
-      },
+    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
+      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
     })
 
-    const result = proxy.getQuickInfoAtPosition('test.ts', 0)!
-    const tag = result.tags?.find((t) => t.name === TAG_NAME)
-
-    expect(tag).toBeDefined()
-    const data: PluginTagData = JSON.parse(tag!.text![0].text)
-    expect(data.isFunction).toBe(true)
-  })
-
-  it('should inject isFunction=false tag when type has no call or construct signatures', () => {
-    const quickInfo = createMockQuickInfo({ tags: [] })
-    const { proxy } = setupPlugin({
-      quickInfo,
-      program: {
-        type: createMockType(0, 0),
-      },
-    })
-
-    const result = proxy.getQuickInfoAtPosition('test.ts', 0)!
-    const tag = result.tags?.find((t) => t.name === TAG_NAME)
-
-    expect(tag).toBeDefined()
-    const data: PluginTagData = JSON.parse(tag!.text![0].text)
-    expect(data.isFunction).toBe(false)
-  })
-
-  it('should preserve existing tags when injecting', () => {
-    const existingTag = { name: 'param', text: [{ kind: 'text' as const, text: 'x - value' }] }
-    const quickInfo = createMockQuickInfo({ tags: [existingTag] })
-    const { proxy } = setupPlugin({
-      quickInfo,
-      program: {
-        type: createMockType(0, 0),
-      },
-    })
-
-    const result = proxy.getQuickInfoAtPosition('test.ts', 0)!
-    expect(result.tags).toHaveLength(2)
-    expect(result.tags![0]).toEqual(existingTag)
-    expect(result.tags![1].name).toBe(TAG_NAME)
-  })
-
-  it('should return prior unchanged when symbol is not found at node', () => {
-    const quickInfo = createMockQuickInfo({ tags: [] })
-    const { proxy } = setupPlugin({
-      quickInfo,
-      program: {
-        symbol: undefined,
-        type: createMockType(1, 0),
-      },
-    })
-
-    const result = proxy.getQuickInfoAtPosition('test.ts', 0)!
-    const tag = result.tags?.find((t) => t.name === TAG_NAME)
-    expect(tag).toBeUndefined()
+    const response = getResponse(result)
+    expect(response).toMatchObject({ id: 'error', error: { name: 'Error', message: 'unexpected failure' } })
   })
 
   it('should delegate non-overridden methods to original language service', () => {

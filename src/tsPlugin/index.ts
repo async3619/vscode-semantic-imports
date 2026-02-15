@@ -1,5 +1,5 @@
 import type tslib from 'typescript/lib/tsserverlibrary'
-import { TAG_NAME } from './protocol'
+import { RESPONSE_KEY, type PluginRequest, type PluginResponse } from './protocol'
 
 type TypeScript = typeof tslib
 
@@ -16,41 +16,34 @@ function init(modules: { typescript: TypeScript }) {
         (oldLS[key] as unknown as (...a: unknown[]) => unknown)(...args)
     }
 
-    proxy.getQuickInfoAtPosition = (fileName, position) => {
-      const prior = oldLS.getQuickInfoAtPosition(fileName, position)
-      if (!prior) {
-        return prior
+    proxy.getCompletionsAtPosition = (fileName, position, options, formattingSettings) => {
+      const possiblePayload = options?.triggerCharacter
+
+      if (!possiblePayload || typeof possiblePayload === 'string') {
+        return oldLS.getCompletionsAtPosition(fileName, position, options, formattingSettings)
       }
 
-      const program = oldLS.getProgram()
-      if (!program) {
-        return prior
+      const request = possiblePayload as unknown as PluginRequest
+
+      let prior = oldLS.getCompletionsAtPosition(fileName, position, undefined, undefined)
+      prior ??= {
+        isGlobalCompletion: false,
+        isMemberCompletion: false,
+        isNewIdentifierLocation: false,
+        entries: [],
       }
 
-      const sourceFile = program.getSourceFile(fileName)
-      if (!sourceFile) {
-        return prior
+      try {
+        const response = handleRequest(ts, oldLS, fileName, position, request)
+        ;(prior as unknown as Record<string, unknown>)[RESPONSE_KEY] = response
+      } catch (e) {
+        const error = e instanceof Error ? e : new Error(String(e))
+        const response: PluginResponse = {
+          id: 'error',
+          error: { name: error.name, message: error.message, stack: error.stack },
+        }
+        ;(prior as unknown as Record<string, unknown>)[RESPONSE_KEY] = response
       }
-
-      const typeChecker = program.getTypeChecker()
-      const node = findTokenAtPosition(ts, sourceFile, position)
-      if (!node) {
-        return prior
-      }
-
-      const symbol = typeChecker.getSymbolAtLocation(node)
-      if (!symbol) {
-        return prior
-      }
-
-      const type = typeChecker.getTypeOfSymbolAtLocation(symbol, node)
-      const isFunction = type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0
-
-      const tag: tslib.JSDocTagInfo = {
-        name: TAG_NAME,
-        text: [{ kind: 'text', text: JSON.stringify({ isFunction }) }],
-      }
-      prior.tags = [...(prior.tags || []), tag]
 
       return prior
     }
@@ -59,6 +52,49 @@ function init(modules: { typescript: TypeScript }) {
   }
 
   return { create }
+}
+
+function handleRequest(
+  ts: TypeScript,
+  ls: tslib.LanguageService,
+  fileName: string,
+  position: number,
+  request: PluginRequest,
+): PluginResponse {
+  switch (request.id) {
+    case 'resolve':
+      const data = handleResolve(ts, ls, fileName, position)
+      console.log(`[plugin] handleRequest: ${JSON.stringify({ fileName, position, request, data })}`)
+      return data
+  }
+}
+
+function handleResolve(ts: TypeScript, ls: tslib.LanguageService, fileName: string, position: number): PluginResponse {
+  const program = ls.getProgram()
+  if (!program) {
+    return { id: 'error', error: { name: 'PluginError', message: 'no program' } }
+  }
+
+  const sourceFile = program.getSourceFile(fileName)
+  if (!sourceFile) {
+    return { id: 'error', error: { name: 'PluginError', message: 'no source file' } }
+  }
+
+  const typeChecker = program.getTypeChecker()
+  const node = findTokenAtPosition(ts, sourceFile, position)
+  if (!node) {
+    return { id: 'error', error: { name: 'PluginError', message: 'no node' } }
+  }
+
+  const symbol = typeChecker.getSymbolAtLocation(node)
+  if (!symbol) {
+    return { id: 'error', error: { name: 'PluginError', message: 'no symbol' } }
+  }
+
+  const type = typeChecker.getTypeOfSymbolAtLocation(symbol, node)
+  const isFunction = type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0
+
+  return { id: 'resolve', isFunction }
 }
 
 function findTokenAtPosition(ts: TypeScript, sourceFile: tslib.SourceFile, position: number): tslib.Node | undefined {
