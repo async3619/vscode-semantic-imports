@@ -106,7 +106,7 @@ describe('DecorationService', () => {
 
       it('should find symbol occurrences and apply decorations', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -121,7 +121,7 @@ describe('DecorationService', () => {
     describe('symbol occurrence regex', () => {
       it('should exclude the module specifier part after from', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['react', 'useState'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        const spy = vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -132,7 +132,7 @@ describe('DecorationService', () => {
 
       it('should escape special regex characters in symbol names without throwing', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['$special'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Variable)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Variable)
 
         const editor = createMockEditor(["import { $special } from 'mod'"])
 
@@ -142,7 +142,7 @@ describe('DecorationService', () => {
 
       it('should find same symbol on multiple lines', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['Foo'], importEndLine: 2 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Class)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Class)
 
         const editor = createMockEditor(["import { Foo } from 'a'", "import { Foo } from 'b'"])
         await service.applyImportDecorations(editor)
@@ -156,7 +156,7 @@ describe('DecorationService', () => {
 
       it('should use word boundary matching', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['use'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { use, useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -172,7 +172,7 @@ describe('DecorationService', () => {
     describe('symbol kind resolution', () => {
       it('should call resolve for each unique symbol', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState', 'useEffect'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        const spy = vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useState, useEffect } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -205,7 +205,7 @@ describe('DecorationService', () => {
     describe('color mapping', () => {
       it('should map function kind to the injected function color', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { myFn } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -217,7 +217,7 @@ describe('DecorationService', () => {
 
       it('should group symbols with same color into a single setDecorations call', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['ClassA', 'ClassB'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Class)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Class)
 
         const editor = createMockEditor(["import { ClassA, ClassB } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -229,7 +229,7 @@ describe('DecorationService', () => {
 
       it('should create separate setDecorations calls for different colors', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockImplementation(async (_doc, pos) => {
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockImplementation(async (_doc, pos) => {
           // myFn at char 9, MyClass at char 15
           return pos.character < 14 ? SymbolKind.Function : SymbolKind.Class
         })
@@ -251,7 +251,7 @@ describe('DecorationService', () => {
         }
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockImplementation(async (_doc, pos) => {
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockImplementation(async (_doc, pos) => {
           return pos.character < 14 ? SymbolKind.Function : SymbolKind.Class
         })
 
@@ -272,7 +272,7 @@ describe('DecorationService', () => {
         }
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { myFn } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -284,7 +284,7 @@ describe('DecorationService', () => {
     describe('caching', () => {
       it('should store resolved kinds in documentCaches', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -304,7 +304,7 @@ describe('DecorationService', () => {
         })
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service).resolvers[1], 'resolve')
+        const spy = vi.spyOn(internals(service).resolvers[0], 'resolve')
 
         const editor = createMockEditor([importLine])
         await service.applyImportDecorations(editor)
@@ -322,7 +322,7 @@ describe('DecorationService', () => {
         })
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useEffect'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        const spy = vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useEffect } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -340,7 +340,7 @@ describe('DecorationService', () => {
         })
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState', 'useEffect'], importEndLine: 1 })
-        const spy = vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        const spy = vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor([importText])
         await service.applyImportDecorations(editor)
@@ -360,7 +360,7 @@ describe('DecorationService', () => {
         })
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['useState', 'useEffect'], importEndLine: 1 })
-        vi.spyOn(internals(service).resolvers[1], 'resolve').mockResolvedValue(SymbolKind.Function)
+        vi.spyOn(internals(service).resolvers[0], 'resolve').mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor([importText])
         await service.applyImportDecorations(editor)

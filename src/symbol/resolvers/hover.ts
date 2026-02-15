@@ -10,6 +10,8 @@ const VARIABLE_KEYWORDS = new Set(['const', 'let', 'var'])
 const TYPE_EXTRACT_PATTERN = /\(alias\)\s+(?:const|let|var)\s+\S+\s*:\s*(.+)/
 
 export class HoverSymbolResolver extends BaseSymbolResolver {
+  readonly name = 'hover'
+
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
     const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
       'vscode.executeHoverProvider',

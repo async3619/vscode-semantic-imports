@@ -11,6 +11,8 @@ interface QuickInfoResponse {
 }
 
 export class QuickInfoSymbolResolver extends BaseSymbolResolver {
+  readonly name = 'quickInfo'
+
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
     const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
       'vscode.executeDefinitionProvider',

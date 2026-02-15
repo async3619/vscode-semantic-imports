@@ -1,6 +1,9 @@
 import * as esbuild from 'esbuild'
+import * as fs from 'fs'
 
 const isWatch = process.argv.includes('--watch')
+
+const pluginDir = 'node_modules/semantic-imports-ts-plugin'
 
 /** @type {import('esbuild').Plugin} */
 const watchPlugin = {
@@ -19,8 +22,23 @@ const watchPlugin = {
   },
 }
 
+/** @type {import('esbuild').Plugin} */
+const installTsPlugin = {
+  name: 'install-ts-plugin',
+  setup(build) {
+    build.onEnd((result) => {
+      if (result.errors.length > 0) {
+        return
+      }
+      fs.mkdirSync(pluginDir, { recursive: true })
+      fs.copyFileSync('tsPlugin/package.json', `${pluginDir}/package.json`)
+      fs.copyFileSync('tsPlugin/index.js', `${pluginDir}/index.js`)
+    })
+  },
+}
+
 /** @type {import('esbuild').BuildOptions} */
-const buildOptions = {
+const extensionOptions = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
   outfile: 'dist/extension.js',
@@ -34,11 +52,25 @@ const buildOptions = {
   plugins: isWatch ? [watchPlugin] : [],
 }
 
+/** @type {import('esbuild').BuildOptions} */
+const tsPluginOptions = {
+  entryPoints: ['src/tsPlugin/index.ts'],
+  bundle: true,
+  outfile: 'tsPlugin/index.js',
+  external: ['typescript', 'typescript/lib/tsserverlibrary'],
+  format: 'cjs',
+  platform: 'node',
+  target: 'node18',
+  sourcemap: true,
+  minify: !isWatch,
+  plugins: isWatch ? [watchPlugin, installTsPlugin] : [installTsPlugin],
+}
+
 if (isWatch) {
-  const ctx = await esbuild.context(buildOptions)
-  await ctx.watch()
+  const [extCtx, pluginCtx] = await Promise.all([esbuild.context(extensionOptions), esbuild.context(tsPluginOptions)])
+  await Promise.all([extCtx.watch(), pluginCtx.watch()])
   console.log('[watch] Watching for changes...')
 } else {
-  await esbuild.build(buildOptions)
+  await Promise.all([esbuild.build(extensionOptions), esbuild.build(tsPluginOptions)])
   console.log('[esbuild] build complete')
 }

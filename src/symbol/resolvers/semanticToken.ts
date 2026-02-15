@@ -4,6 +4,8 @@ import { findTokenTypeAtPosition } from '../utils/findTokenTypeAtPosition'
 import { toSymbolKind } from '../utils/toSymbolKind'
 
 export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
+  readonly name = 'semanticToken'
+
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
     const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
       'vscode.executeDefinitionProvider',
