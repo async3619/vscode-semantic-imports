@@ -3,6 +3,7 @@ import { parseImports } from '../importParser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
 import {
   HoverSymbolResolver,
+  PluginSymbolResolver,
   SemanticTokenSymbolResolver,
   QuickInfoSymbolResolver,
   TsServerLoadingError,
@@ -26,6 +27,7 @@ export class DecorationService implements vscode.Disposable {
     this.colors = colors
     this.resolvers = [
       new HoverSymbolResolver(this.output),
+      new PluginSymbolResolver(this.output),
       new SemanticTokenSymbolResolver(this.output),
       new QuickInfoSymbolResolver(this.output),
     ]
