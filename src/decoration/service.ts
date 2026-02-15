@@ -26,8 +26,8 @@ export class DecorationService implements vscode.Disposable {
     this.output = output
     this.colors = colors
     this.resolvers = [
-      new HoverSymbolResolver(this.output),
       new PluginSymbolResolver(this.output),
+      new HoverSymbolResolver(this.output),
       new SemanticTokenSymbolResolver(this.output),
       new QuickInfoSymbolResolver(this.output),
     ]
