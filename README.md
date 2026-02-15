@@ -1,8 +1,6 @@
 <h1 align="center">
   <br />
-  <img src="./assets/vscode-logo.png" alt="VS Code" width="48" />
-  &nbsp;&nbsp;
-  <img src="./assets/typescript-logo.png" alt="TypeScript" width="48" />
+  <img src="./assets/icon.png" alt="Semantic Imports" width="48" />
   <br />
   vscode-semantic-imports
   <sup>
