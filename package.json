@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "publisher": "async3619",
   "license": "MIT",
+  "icon": "assets/icon.png",
   "packageManager": "pnpm@10.29.3",
   "repository": {
     "type": "git",
@@ -13,6 +14,9 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Programming Languages"
   ],

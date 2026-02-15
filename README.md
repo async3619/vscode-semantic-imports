@@ -1,8 +1,6 @@
 <h1 align="center">
   <br />
-  <img src="./assets/vscode-logo.png" alt="VS Code" width="48" />
-  &nbsp;&nbsp;
-  <img src="./assets/typescript-logo.png" alt="TypeScript" width="48" />
+  <img src="./assets/icon.png" alt="Semantic Imports" width="48" />
   <br />
   vscode-semantic-imports
   <sup>
@@ -85,6 +83,9 @@ Press `F5` in VS Code to launch the Extension Development Host with the extensio
 
 - VS Code `1.85.0` or later
 - TypeScript language features enabled (built-in with VS Code)
+
+> [!WARNING]
+> This extension does not support VS Code Web environments (e.g., vscode.dev, github.dev). It requires a local or remote workspace with access to the TypeScript Server.
 
 ## License
 
