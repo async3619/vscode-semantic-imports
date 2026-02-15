@@ -39,7 +39,7 @@ const eslintConfig = defineConfig([
       curly: ['error', 'all'],
     },
   },
-  globalIgnores(['dist/', 'node_modules/']),
+  globalIgnores(['dist/', 'node_modules/', 'tsPlugin/index.js']),
 ])
 
 export default eslintConfig

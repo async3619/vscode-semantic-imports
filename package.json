@@ -24,7 +24,7 @@
   "contributes": {
     "typescriptServerPlugins": [
       {
-        "name": "./dist/tsPlugin",
+        "name": "semantic-imports-ts-plugin",
         "enableForWorkspaceTypeScriptVersions": true
       }
     ]

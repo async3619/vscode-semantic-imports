@@ -1,6 +1,9 @@
 import * as esbuild from 'esbuild'
+import * as fs from 'fs'
 
 const isWatch = process.argv.includes('--watch')
+
+const pluginDir = 'node_modules/semantic-imports-ts-plugin'
 
 /** @type {import('esbuild').Plugin} */
 const watchPlugin = {
@@ -15,6 +18,21 @@ const watchPlugin = {
       } else {
         console.log('[watch] Build finished with errors')
       }
+    })
+  },
+}
+
+/** @type {import('esbuild').Plugin} */
+const installTsPlugin = {
+  name: 'install-ts-plugin',
+  setup(build) {
+    build.onEnd((result) => {
+      if (result.errors.length > 0) {
+        return
+      }
+      fs.mkdirSync(pluginDir, { recursive: true })
+      fs.copyFileSync('tsPlugin/package.json', `${pluginDir}/package.json`)
+      fs.copyFileSync('tsPlugin/index.js', `${pluginDir}/index.js`)
     })
   },
 }
@@ -38,14 +56,14 @@ const extensionOptions = {
 const tsPluginOptions = {
   entryPoints: ['src/tsPlugin/index.ts'],
   bundle: true,
-  outfile: 'dist/tsPlugin.js',
-  external: [],
+  outfile: 'tsPlugin/index.js',
+  external: ['typescript', 'typescript/lib/tsserverlibrary'],
   format: 'cjs',
   platform: 'node',
   target: 'node18',
   sourcemap: true,
   minify: !isWatch,
-  plugins: isWatch ? [watchPlugin] : [],
+  plugins: isWatch ? [watchPlugin, installTsPlugin] : [installTsPlugin],
 }
 
 if (isWatch) {

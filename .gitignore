@@ -1,5 +1,7 @@
 node_modules/
 dist/
+tsPlugin/index.js
+tsPlugin/index.js.map
 *.vsix
 .vscode-test/
 coverage/
