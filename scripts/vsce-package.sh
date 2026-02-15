@@ -3,9 +3,6 @@ set -euo pipefail
 
 VERSION="$1"
 
-# Skip marketplace packaging for pre-release versions
-if [[ "$VERSION" == *-* ]]; then exit 0; fi
-
 vsce package --no-dependencies
 
 # vsce hardcodes node_modules/** exclusion (microsoft/vscode-vsce#970).
