@@ -84,6 +84,9 @@ Press `F5` in VS Code to launch the Extension Development Host with the extensio
 - VS Code `1.85.0` or later
 - TypeScript language features enabled (built-in with VS Code)
 
+> [!WARNING]
+> This extension does not support VS Code Web environments (e.g., vscode.dev, github.dev). It requires a local or remote workspace with access to the TypeScript Server.
+
 ## License
 
 MIT &copy; [async3619](https://github.com/async3619)
