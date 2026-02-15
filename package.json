@@ -2,7 +2,7 @@
   "name": "vscode-semantic-imports",
   "displayName": "Semantic Imports",
   "description": "Accurate syntax highlighting for imported symbols in TypeScript",
-  "version": "1.0.0",
+  "version": "1.0.1-dev.1",
   "publisher": "async3619",
   "license": "MIT",
   "icon": "assets/icon.png",
