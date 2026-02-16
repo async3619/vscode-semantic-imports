@@ -1,3 +1,4 @@
+import PQueue from 'p-queue'
 import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
@@ -8,6 +9,7 @@ import type { DocumentCache, SymbolOccurrence } from './types'
 
 const MAX_RETRIES = 5
 const RETRY_DELAY_MS = 500
+const CONCURRENCY_LIMIT = 5
 
 interface ResolverPhase {
   resolver: BaseSymbolResolver
@@ -183,8 +185,9 @@ export class DecorationService implements vscode.Disposable {
   ) {
     let tsServerLoading = false
 
-    await Promise.all(
-      symbols.map(async (symbol) => {
+    const queue = new PQueue({ concurrency: CONCURRENCY_LIMIT })
+    await queue.addAll(
+      symbols.map((symbol) => async () => {
         const label = symbolSources[symbol] ? `'${symbol}' from '${symbolSources[symbol]}'` : `'${symbol}'`
         try {
           const occurrence = occurrenceBySymbol.get(symbol)
