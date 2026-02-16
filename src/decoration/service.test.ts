@@ -226,8 +226,6 @@ describe('DecorationService', () => {
 
         expect(maxConcurrent).toBeLessThanOrEqual(5)
         expect(maxConcurrent).toBeGreaterThan(1)
-
-        vi.useFakeTimers()
       })
 
       it('should skip decoration when resolver throws', async () => {
