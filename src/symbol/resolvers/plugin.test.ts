@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
+import { TsServerLoadingError } from '../errors'
 import { PluginSymbolResolver } from './plugin'
 import { SymbolKind } from '../types'
 import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
@@ -138,6 +139,35 @@ describe('PluginSymbolResolver', () => {
       definitions: [createMockLocation('git:///def.ts')],
       completionInfo: null,
     })
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+    expect(result).toBeUndefined()
+  })
+
+  it('should throw TsServerLoadingError when tsserverRequest throws "No Project" error', async () => {
+    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
+      if (command === 'vscode.executeDefinitionProvider') {
+        return [createMockLocation()]
+      }
+      if (command === 'typescript.tsserverRequest') {
+        throw new Error('No Project.')
+      }
+      return null
+    })
+
+    await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
+  })
+
+  it('should return undefined when tsserverRequest throws a non "No Project" error', async () => {
+    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
+      if (command === 'vscode.executeDefinitionProvider') {
+        return [createMockLocation()]
+      }
+      if (command === 'typescript.tsserverRequest') {
+        throw new Error('Some other error')
+      }
+      return null
+    })
+
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })

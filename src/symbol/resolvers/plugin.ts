@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 import { Logger } from '../../logger'
 import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
+import { TsServerLoadingError } from '../errors'
 import { SymbolKind, BaseSymbolResolver } from '../types'
 
 interface CompletionInfoResponse {
@@ -44,7 +45,14 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
         },
       )
     } catch (error) {
-      this.logger.debug('tsserver request failed:', error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+
+      if (message.includes('No Project')) {
+        this.logger.debug('TypeScript Server not ready (No Project), will retry')
+        throw new TsServerLoadingError()
+      }
+
+      this.logger.debug('tsserver request failed:', message)
       return undefined
     }
 
