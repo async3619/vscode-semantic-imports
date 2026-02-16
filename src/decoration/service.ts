@@ -1,6 +1,6 @@
 import PQueue from 'p-queue'
 import * as vscode from 'vscode'
-import { parseImports } from '../importParser'
+import { TypeScriptParser } from '../parser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver, TsServerLoadingError } from '../symbol'
 import { Logger } from '../logger'
@@ -24,6 +24,7 @@ export class DecorationService implements vscode.Disposable {
   private readonly documentCaches = new Map<string, DocumentCache>()
   private readonly retryTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly probeControllers = new Map<string, AbortController>()
+  private readonly parser = new TypeScriptParser()
   private colors: SymbolColorMap
 
   constructor(colors: SymbolColorMap = {}, probe?: TypeScriptServerProbe) {
@@ -53,35 +54,27 @@ export class DecorationService implements vscode.Disposable {
     this.cancelProbe(docUri)
 
     const text = document.getText()
-    const { symbols, symbolSources, importEndLine } = parseImports(text)
+    const statements = this.parser.parseImports(text)
 
     // Clear all existing decorations
     for (const type of this.decorationTypes.values()) {
       editor.setDecorations(type, [])
     }
 
-    if (symbols.length === 0) {
+    if (statements.length === 0) {
       return
     }
 
-    const escapedSymbols = symbols.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    const pattern = new RegExp(`\\b(${escapedSymbols.join('|')})\\b`, 'g')
-    const occurrences: SymbolOccurrence[] = []
-
-    for (let lineIndex = 0; lineIndex < importEndLine; lineIndex++) {
-      const lineText = document.lineAt(lineIndex).text
-
-      // Exclude the module specifier part (from '...' / from "...")
-      const fromMatch = lineText.match(/\s+from\s+['"]/)
-      const searchText = fromMatch ? lineText.slice(0, fromMatch.index) : lineText
-      let match: RegExpExecArray | null
-
-      pattern.lastIndex = 0
-      while ((match = pattern.exec(searchText)) !== null) {
-        const startPos = new vscode.Position(lineIndex, match.index)
-        const endPos = new vscode.Position(lineIndex, match.index + match[0].length)
-        occurrences.push({ symbol: match[0], range: new vscode.Range(startPos, endPos) })
-      }
+    // Build occurrences and source map from parsed statements
+    const occurrences = statements.map(
+      (s): SymbolOccurrence => ({
+        symbol: s.localName,
+        range: new vscode.Range(s.startLine, s.startColumn, s.endLine, s.endColumn),
+      }),
+    )
+    const symbolSources: Record<string, string> = {}
+    for (const { localName, source } of statements) {
+      symbolSources[localName] ??= source
     }
 
     // Precompute first occurrence of each symbol for O(1) lookup
@@ -93,6 +86,7 @@ export class DecorationService implements vscode.Disposable {
     }
 
     // Resolve kind for each unique symbol, using cache when possible
+    const importEndLine = Math.max(...statements.map((s) => s.endLine)) + 1
     const importSectionText = text.split('\n').slice(0, importEndLine).join('\n')
     const cached = this.documentCaches.get(docUri)
     const symbolKinds = new Map<string, SymbolKind>()
