@@ -43,7 +43,8 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
           triggerCharacter: { id: 'resolve' },
         },
       )
-    } catch {
+    } catch (error) {
+      this.logger.debug('tsserver request failed:', error instanceof Error ? error.message : String(error))
       return undefined
     }
 
@@ -53,6 +54,7 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
     }
 
     if (response.id === 'error') {
+      this.logger.debug('plugin responded with error')
       return undefined
     }
 

@@ -13,6 +13,7 @@ describe('Logger', () => {
   let debugFn: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    Logger.dispose()
     infoFn = vi.fn()
     warnFn = vi.fn()
     errorFn = vi.fn()

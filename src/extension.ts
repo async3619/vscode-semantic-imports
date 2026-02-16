@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import { DecorationService } from './decoration'
+import { Logger } from './logger'
 import { ThemeColorResolver } from './theme'
 
 const SUPPORTED_LANGUAGES = new Set(['typescript', 'typescriptreact'])
@@ -71,5 +72,5 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-  // Service is disposed automatically via context.subscriptions
+  Logger.dispose()
 }

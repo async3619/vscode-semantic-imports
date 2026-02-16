@@ -202,6 +202,11 @@ export class DecorationService implements vscode.Disposable {
           if (error instanceof TsServerLoadingError) {
             this.logger.warn(`tsserver is still loading, skipping ${label}`)
             tsServerLoading = true
+          } else {
+            this.logger.warn(
+              `failed to resolve ${label} via '${resolver.name}' resolver:`,
+              error instanceof Error ? error.message : String(error),
+            )
           }
         }
       }),
