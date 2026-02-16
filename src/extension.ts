@@ -14,10 +14,11 @@ function isSupported(document: vscode.TextDocument) {
 class Extension implements vscode.Disposable {
   private readonly service = new DecorationService()
   private readonly themeResolver = new ThemeColorResolver()
-  private readonly debouncedTriggerDecoration = debounce(
-    (editor: vscode.TextEditor) => this.triggerDecoration(editor),
-    DEBOUNCE_DELAY_MS,
-  )
+  private readonly debouncedTriggerDecoration = debounce((editor: vscode.TextEditor) => {
+    if (!editor.document.isClosed) {
+      this.triggerDecoration(editor)
+    }
+  }, DEBOUNCE_DELAY_MS)
 
   activate(context: vscode.ExtensionContext) {
     this.refreshColors()
