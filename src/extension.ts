@@ -27,10 +27,10 @@ class Extension implements vscode.Disposable {
       this.service,
       vscode.window.onDidChangeActiveColorTheme(() => this.refreshColors()),
       vscode.extensions.onDidChange(() => this.refreshColors()),
-      vscode.workspace.onDidChangeConfiguration((e) => this.onDidChangeConfiguration(e)),
-      vscode.window.onDidChangeActiveTextEditor((editor) => this.onDidChangeActiveTextEditor(editor)),
-      vscode.workspace.onDidChangeTextDocument((e) => this.onDidChangeTextDocument(e)),
-      vscode.workspace.onDidCloseTextDocument((document) => this.onDidCloseTextDocument(document)),
+      vscode.workspace.onDidChangeConfiguration(this.onDidChangeConfiguration),
+      vscode.window.onDidChangeActiveTextEditor(this.onDidChangeActiveTextEditor),
+      vscode.workspace.onDidChangeTextDocument(this.onDidChangeTextDocument),
+      vscode.workspace.onDidCloseTextDocument(this.onDidCloseTextDocument),
     )
   }
 
@@ -38,7 +38,7 @@ class Extension implements vscode.Disposable {
     this.debouncedTriggerDecoration.cancel()
   }
 
-  private onDidChangeConfiguration(e: vscode.ConfigurationChangeEvent) {
+  private onDidChangeConfiguration = (e: vscode.ConfigurationChangeEvent) => {
     if (
       e.affectsConfiguration('editor.semanticTokenColorCustomizations') ||
       e.affectsConfiguration('editor.tokenColorCustomizations')
@@ -47,20 +47,20 @@ class Extension implements vscode.Disposable {
     }
   }
 
-  private onDidChangeActiveTextEditor(editor: vscode.TextEditor | undefined) {
+  private onDidChangeActiveTextEditor = (editor: vscode.TextEditor | undefined) => {
     if (editor && isSupported(editor.document)) {
       this.triggerDecoration(editor)
     }
   }
 
-  private onDidChangeTextDocument(e: vscode.TextDocumentChangeEvent) {
+  private onDidChangeTextDocument = (e: vscode.TextDocumentChangeEvent) => {
     const editor = vscode.window.activeTextEditor
     if (editor && editor.document === e.document && isSupported(e.document)) {
       this.debouncedTriggerDecoration(editor)
     }
   }
 
-  private onDidCloseTextDocument(document: vscode.TextDocument) {
+  private onDidCloseTextDocument = (document: vscode.TextDocument) => {
     if (isSupported(document)) {
       this.service.clearDocumentCache(document.uri.toString())
     }
