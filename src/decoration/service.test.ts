@@ -392,6 +392,32 @@ describe('DecorationService', () => {
         expect(spy).toHaveBeenCalledTimes(1)
       })
 
+      it('should apply cached decorations even when new symbols fail to resolve', async () => {
+        const importText = "import { useState, useEffect } from 'react'"
+        const docUri = 'file:///test.ts'
+
+        internals(service).documentCaches.set(docUri, {
+          importSectionText: importText,
+          symbolKinds: new Map([['useState', SymbolKind.Function]]),
+        })
+
+        vi.mocked(parseImports).mockReturnValue({
+          symbols: ['useState', 'useEffect'],
+          symbolSources: {},
+          importEndLine: 1,
+        })
+        // All resolvers fail for useEffect (return undefined by default from stubAllResolvers)
+
+        const editor = createMockEditor([importText])
+        await service.applyImportDecorations(editor)
+
+        // Cached useState should still be decorated despite useEffect failing
+        const calls = vi.mocked(editor.setDecorations).mock.calls
+        const decoratedCall = calls.find((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(decoratedCall).toBeDefined()
+        expect(decoratedCall![1]).toHaveLength(1)
+      })
+
       it('should update cache after resolving new symbols', async () => {
         const importText = "import { useState, useEffect } from 'react'"
         const docUri = 'file:///test.ts'
