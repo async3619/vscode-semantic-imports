@@ -133,7 +133,7 @@ export class DecorationService implements vscode.Disposable {
 
       const unresolved = symbolsToResolve.filter((s) => !symbolKinds.has(s))
       if (unresolved.length > 0) {
-        this.logger.debug(`could not resolve: ${unresolved.join(', ')}`)
+        this.logger.debug(`could not resolve: ${unresolved.map((s) => `'${s}'`).join(', ')}`)
       }
 
       this.documentCaches.set(docUri, { importSectionText, symbolKinds: new Map(symbolKinds) })
@@ -184,7 +184,7 @@ export class DecorationService implements vscode.Disposable {
 
     await Promise.all(
       symbols.map(async (symbol) => {
-        const label = symbolSources[symbol] ? `${symbol} from '${symbolSources[symbol]}'` : symbol
+        const label = symbolSources[symbol] ? `'${symbol}' from '${symbolSources[symbol]}'` : `'${symbol}'`
         try {
           const occurrence = occurrenceBySymbol.get(symbol)
           if (!occurrence) {

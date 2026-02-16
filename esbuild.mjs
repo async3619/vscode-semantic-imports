@@ -49,6 +49,7 @@ const extensionOptions = {
   target: 'node18',
   sourcemap: true,
   minify: !isWatch,
+  keepNames: true,
   plugins: isWatch ? [watchPlugin] : [],
 }
 
@@ -63,6 +64,7 @@ const tsPluginOptions = {
   target: 'node18',
   sourcemap: true,
   minify: !isWatch,
+  keepNames: true,
   plugins: isWatch ? [watchPlugin, installTsPlugin] : [installTsPlugin],
 }
 
