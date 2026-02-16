@@ -136,6 +136,7 @@ export class DecorationService implements vscode.Disposable {
         this.logger.debug(`could not resolve: ${unresolved.map((s) => `'${s}'`).join(', ')}`)
       }
 
+      this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
       this.documentCaches.set(docUri, { importSectionText, symbolKinds: new Map(symbolKinds) })
     } else {
       this.logger.debug(`all ${uniqueSymbols.length} symbols resolved from cache`)
