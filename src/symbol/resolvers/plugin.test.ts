@@ -4,14 +4,6 @@ import { PluginSymbolResolver } from './plugin'
 import { SymbolKind } from '../types'
 import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
 
-type ResolverInternals = {
-  output: vscode.OutputChannel
-}
-
-function internals(resolver: PluginSymbolResolver) {
-  return resolver as unknown as ResolverInternals
-}
-
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
 }
@@ -52,7 +44,7 @@ describe('PluginSymbolResolver', () => {
   let resolver: PluginSymbolResolver
 
   beforeEach(() => {
-    resolver = new PluginSymbolResolver(vscode.window.createOutputChannel('test'))
+    resolver = new PluginSymbolResolver()
     vi.mocked(vscode.commands.executeCommand).mockReset()
   })
 
@@ -125,20 +117,6 @@ describe('PluginSymbolResolver', () => {
     expect(result).toBeUndefined()
   })
 
-  it('should log error message when response is an error', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: createCompletionInfoWithResponse({
-        id: 'error',
-        error: { name: 'PluginError', message: 'no program' },
-      }),
-    })
-    await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(
-      expect.stringContaining('[plugin] error: no program'),
-    )
-  })
-
   it('should call tsserverRequest with completionInfo and triggerCharacter', async () => {
     mockPluginResolution({
       definitions: [createMockLocation('file:///def.ts', 5, 4, 10)],
@@ -181,16 +159,5 @@ describe('PluginSymbolResolver', () => {
 
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
-  })
-
-  it('should log plugin resolution to output channel', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: createCompletionInfoWithResponse({ id: 'resolve', isFunction: true }),
-    })
-
-    await resolver.resolve(createMockDocument(), createMockPosition(3, 7))
-
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[plugin] 3:7'))
   })
 })

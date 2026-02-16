@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver, TsServerLoadingError } from '../symbol'
+import { Logger } from '../logger'
 import type { SymbolColorMap } from '../theme'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
@@ -13,20 +14,19 @@ interface ResolverPhase {
 }
 
 export class DecorationService implements vscode.Disposable {
-  private readonly output: vscode.OutputChannel
+  private readonly logger = Logger.create(DecorationService)
   private readonly phases: ResolverPhase[]
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
   private readonly retryTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
   private colors: SymbolColorMap
 
-  constructor(colors: SymbolColorMap = {}, output: vscode.OutputChannel) {
-    this.output = output
+  constructor(colors: SymbolColorMap = {}) {
     this.colors = colors
     this.phases = [
-      { resolver: new PluginSymbolResolver(this.output) },
-      { resolver: new HoverSymbolResolver(this.output) },
-      { resolver: new SemanticTokenSymbolResolver(this.output) },
+      { resolver: new PluginSymbolResolver() },
+      { resolver: new HoverSymbolResolver() },
+      { resolver: new SemanticTokenSymbolResolver() },
     ]
   }
 
@@ -46,7 +46,7 @@ export class DecorationService implements vscode.Disposable {
     this.cancelRetry(docUri)
 
     const text = document.getText()
-    const { symbols, importEndLine } = parseImports(text)
+    const { symbols, symbolSources, importEndLine } = parseImports(text)
 
     // Clear all existing decorations
     for (const type of this.decorationTypes.values()) {
@@ -107,10 +107,7 @@ export class DecorationService implements vscode.Disposable {
     let tsServerLoading = false
 
     if (symbolsToResolve.length > 0) {
-      this.output.appendLine(
-        `[cache] resolving ${symbolsToResolve.length}/${uniqueSymbols.length} symbols for ${docUri}`,
-      )
-
+      this.logger.debug(`resolving ${symbolsToResolve.length} symbols, ${symbolKinds.size} from cache`)
       for (const { resolver } of this.phases) {
         const targets = symbolsToResolve.filter((s) => !symbolKinds.has(s))
         if (targets.length === 0) {
@@ -118,7 +115,14 @@ export class DecorationService implements vscode.Disposable {
         }
 
         const previousSize = symbolKinds.size
-        const loading = await this.resolveSymbols(resolver, targets, occurrenceBySymbol, document, symbolKinds)
+        const loading = await this.resolveSymbols(
+          resolver,
+          targets,
+          occurrenceBySymbol,
+          document,
+          symbolKinds,
+          symbolSources,
+        )
         if (loading) {
           tsServerLoading = true
         }
@@ -127,16 +131,20 @@ export class DecorationService implements vscode.Disposable {
         }
       }
 
+      const unresolved = symbolsToResolve.filter((s) => !symbolKinds.has(s))
+      if (unresolved.length > 0) {
+        this.logger.debug(`could not resolve: ${unresolved.map((s) => `'${s}'`).join(', ')}`)
+      }
+
       this.documentCaches.set(docUri, { importSectionText, symbolKinds: new Map(symbolKinds) })
     } else {
-      this.output.appendLine(`[cache] full hit for ${docUri}`)
+      this.logger.debug(`all ${uniqueSymbols.length} symbols resolved from cache`)
       this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
     }
 
-    // Schedule retry if tsserver was loading and retries remain
     if (tsServerLoading && retryCount < MAX_RETRIES) {
       const delay = RETRY_DELAY_MS * (retryCount + 1)
-      this.output.appendLine(`[retry] scheduling retry ${retryCount + 1}/${MAX_RETRIES} in ${delay}ms for ${docUri}`)
+      this.logger.warn(`waiting for tsserver, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
       const timeout = setTimeout(() => {
         this.retryTimeouts.delete(docUri)
         this.applyImportDecorations(editor, retryCount + 1).catch(() => {
@@ -170,25 +178,35 @@ export class DecorationService implements vscode.Disposable {
     occurrenceBySymbol: Map<string, SymbolOccurrence>,
     document: vscode.TextDocument,
     symbolKinds: Map<string, SymbolKind>,
+    symbolSources: Record<string, string>,
   ) {
     let tsServerLoading = false
 
     await Promise.all(
       symbols.map(async (symbol) => {
+        const label = symbolSources[symbol] ? `'${symbol}' from '${symbolSources[symbol]}'` : `'${symbol}'`
         try {
           const occurrence = occurrenceBySymbol.get(symbol)
           if (!occurrence) {
             return
           }
-
+          this.logger.debug(`resolving ${label} via '${resolver.name}' resolver`)
+          const start = performance.now()
           const kind = await resolver.resolve(document, occurrence.range.start)
           if (kind && !symbolKinds.has(symbol)) {
-            this.output.appendLine(`[result] \`${symbol}\` -> \`${kind}\` (${resolver.name})`)
             symbolKinds.set(symbol, kind)
+            const elapsed = Math.round(performance.now() - start)
+            this.logger.info(`resolved ${label} → '${kind}' via '${resolver.name}' resolver (in ${elapsed}ms)`)
           }
         } catch (error) {
           if (error instanceof TsServerLoadingError) {
+            this.logger.warn(`tsserver is still loading, skipping ${label}`)
             tsServerLoading = true
+          } else {
+            this.logger.warn(
+              `failed to resolve ${label} via '${resolver.name}' resolver:`,
+              error instanceof Error ? error.message : String(error),
+            )
           }
         }
       }),

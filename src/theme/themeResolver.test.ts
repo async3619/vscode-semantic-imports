@@ -3,16 +3,6 @@ import * as vscode from 'vscode'
 import { SymbolKind } from '../symbol'
 import { ThemeColorResolver } from './themeResolver'
 
-function createMockOutput() {
-  return {
-    appendLine: vi.fn(),
-    append: vi.fn(),
-    clear: vi.fn(),
-    show: vi.fn(),
-    dispose: vi.fn(),
-  } as unknown as vscode.OutputChannel
-}
-
 function mockReadFile(pathToContent: Record<string, string>) {
   vi.mocked(vscode.workspace.fs.readFile).mockImplementation(async (uri: vscode.Uri) => {
     const content = Object.entries(pathToContent).find(([p]) => uri.path.endsWith(p))?.[1]
@@ -51,11 +41,9 @@ function mockConfiguration(options: {
 
 describe('ThemeColorResolver', () => {
   let resolver: ThemeColorResolver
-  let output: vscode.OutputChannel
 
   beforeEach(() => {
-    output = createMockOutput()
-    resolver = new ThemeColorResolver(output)
+    resolver = new ThemeColorResolver()
     vi.mocked(vscode.workspace.getConfiguration).mockReset()
     vi.mocked(vscode.workspace.fs.readFile).mockReset()
     ;(vscode.extensions as { all: unknown[] }).all = []
@@ -67,7 +55,6 @@ describe('ThemeColorResolver', () => {
 
       const colors = await resolver.loadColors()
       expect(colors).toEqual({})
-      expect(output.appendLine).toHaveBeenCalledWith('[theme] active theme not found')
     })
 
     it('should return empty map when no matching theme is found', async () => {
@@ -190,7 +177,6 @@ describe('ThemeColorResolver', () => {
 
       const colors = await resolver.loadColors()
       expect(colors).toEqual({})
-      expect(output.appendLine).toHaveBeenCalledWith('[theme] failed to parse theme file')
     })
 
     it('should merge user color customizations on top of theme colors', async () => {

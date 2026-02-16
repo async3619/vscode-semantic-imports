@@ -1,6 +1,8 @@
 export interface ParsedImports {
   /** All unique imported symbol names (local names, after alias resolution) */
   symbols: string[]
+  /** Mapping of symbol name to its module specifier (e.g. Foo → '~/foo/bar') */
+  symbolSources: Record<string, string>
   /** The 0-based line number where the body starts (first line after all imports) */
   importEndLine: number
 }
@@ -8,6 +10,7 @@ export interface ParsedImports {
 export function parseImports(text: string) {
   const lines = text.split('\n')
   const symbols: string[] = []
+  const symbolSources: Record<string, string> = {}
   let importEndLine = 0
   let i = 0
 
@@ -47,12 +50,24 @@ export function parseImports(text: string) {
       statement += '\n' + lines[endLine]
     }
 
-    symbols.push(...parseImportStatement(statement))
+    const parsed = parseImportStatement(statement)
+    const source = extractModuleSpecifier(statement)
+    for (const symbol of parsed) {
+      symbols.push(symbol)
+      if (source && !symbolSources[symbol]) {
+        symbolSources[symbol] = source
+      }
+    }
     importEndLine = endLine + 1
     i = endLine + 1
   }
 
-  return { symbols: [...new Set(symbols)], importEndLine }
+  return { symbols: [...new Set(symbols)], symbolSources, importEndLine }
+}
+
+function extractModuleSpecifier(statement: string) {
+  const match = statement.match(/from\s+['"]([^'"]+)['"]/) ?? statement.match(/^import\s+['"]([^'"]+)['"]/)
+  return match?.[1]
 }
 
 function isImportComplete(statement: string) {

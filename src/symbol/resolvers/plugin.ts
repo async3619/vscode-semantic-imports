@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { Logger } from '../../logger'
 import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
 import { SymbolKind, BaseSymbolResolver } from '../types'
 
@@ -7,6 +8,7 @@ interface CompletionInfoResponse {
 }
 
 export class PluginSymbolResolver extends BaseSymbolResolver {
+  private readonly logger = Logger.create(PluginSymbolResolver)
   readonly name = 'plugin'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
@@ -29,10 +31,6 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
       return undefined
     }
 
-    this.output.appendLine(
-      `[plugin] ${position.line}:${position.character} → def ${targetUri.fsPath}:${targetPos.line}:${targetPos.character}`,
-    )
-
     let result: CompletionInfoResponse | undefined
     try {
       result = await vscode.commands.executeCommand<CompletionInfoResponse>(
@@ -45,25 +43,20 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
           triggerCharacter: { id: 'resolve' },
         },
       )
-    } catch (e) {
-      this.output.appendLine(`[plugin] completionInfo threw: ${e instanceof Error ? e.message : String(e)}`)
+    } catch (error) {
+      this.logger.debug('tsserver request failed:', error instanceof Error ? error.message : String(error))
       return undefined
     }
 
     const response = result?.body?.[RESPONSE_KEY] as PluginResponse | undefined
-    if (response) {
-      this.output.appendLine(`[plugin] ${JSON.stringify(response)}`)
-    }
     if (!response) {
       return undefined
     }
 
     if (response.id === 'error') {
-      this.output.appendLine(`[plugin] error: ${response.error.message}`)
+      this.logger.debug('plugin responded with error')
       return undefined
     }
-
-    this.output.appendLine(`[plugin] ${position.line}:${position.character} → isFunction=${response.isFunction}`)
 
     if (response.isFunction) {
       return SymbolKind.Function
