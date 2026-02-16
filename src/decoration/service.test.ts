@@ -13,7 +13,7 @@ vi.mock('../importParser', () => ({
 import { parseImports } from '../importParser'
 
 type ServiceInternals = {
-  phases: { resolver: BaseSymbolResolver; fallbackOnly: boolean }[]
+  phases: { resolver: BaseSymbolResolver }[]
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
   documentCaches: Map<string, DocumentCache>
   retryTimeouts: Map<string, ReturnType<typeof setTimeout>>
@@ -217,7 +217,7 @@ describe('DecorationService', () => {
         expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
       })
 
-      it('should use hover result over plugin result for the same symbol', async () => {
+      it('should preserve earlier resolver result when later resolver also resolves', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['mySymbol'], importEndLine: 1 })
         vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
         vi.spyOn(hoverResolver(service), 'resolve').mockResolvedValue(SymbolKind.Class)
@@ -225,9 +225,9 @@ describe('DecorationService', () => {
         const editor = createMockEditor(["import { mySymbol } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        // Hover (Phase 2) should overwrite Plugin (Phase 1)
+        // Plugin (Phase 1) result should be preserved, not overwritten by Hover (Phase 2)
         expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
-          color: TEST_COLORS[SymbolKind.Class],
+          color: TEST_COLORS[SymbolKind.Function],
         })
       })
 

@@ -10,7 +10,6 @@ const RETRY_DELAY_MS = 500
 
 interface ResolverPhase {
   resolver: BaseSymbolResolver
-  fallbackOnly: boolean
 }
 
 export class DecorationService implements vscode.Disposable {
@@ -25,9 +24,9 @@ export class DecorationService implements vscode.Disposable {
     this.output = output
     this.colors = colors
     this.phases = [
-      { resolver: new PluginSymbolResolver(this.output), fallbackOnly: false },
-      { resolver: new HoverSymbolResolver(this.output), fallbackOnly: false },
-      { resolver: new SemanticTokenSymbolResolver(this.output), fallbackOnly: true },
+      { resolver: new PluginSymbolResolver(this.output) },
+      { resolver: new HoverSymbolResolver(this.output) },
+      { resolver: new SemanticTokenSymbolResolver(this.output) },
     ]
   }
 
@@ -104,8 +103,8 @@ export class DecorationService implements vscode.Disposable {
         `[cache] resolving ${symbolsToResolve.length}/${uniqueSymbols.length} symbols for ${docUri}`,
       )
 
-      for (const { resolver, fallbackOnly } of this.phases) {
-        const targets = fallbackOnly ? symbolsToResolve.filter((s) => !symbolKinds.has(s)) : symbolsToResolve
+      for (const { resolver } of this.phases) {
+        const targets = symbolsToResolve.filter((s) => !symbolKinds.has(s))
         if (targets.length === 0) {
           continue
         }
@@ -172,7 +171,7 @@ export class DecorationService implements vscode.Disposable {
           }
 
           const kind = await resolver.resolve(document, occurrence.range.start)
-          if (kind) {
+          if (kind && !symbolKinds.has(symbol)) {
             this.output.appendLine(`[result] \`${symbol}\` -> \`${kind}\` (${resolver.name})`)
             symbolKinds.set(symbol, kind)
           }
