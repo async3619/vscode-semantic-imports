@@ -24,17 +24,23 @@ export class ThemeColorResolver {
   async loadColors(): Promise<SymbolColorMap> {
     const theme = this.discoverActiveTheme()
     if (!theme) {
+      this.logger.warn('no active theme found')
       return {}
     }
 
+    this.logger.info(`loading colors from theme '${theme.themeName}'`)
     const parsed = await parseThemeFile(theme.extensionUri, theme.themePath)
     if (!parsed) {
+      this.logger.warn(`failed to parse theme file for '${theme.themeName}'`)
       return {}
     }
 
     const colors = extractSymbolColors(parsed)
     const userOverrides = readUserColorCustomizations(theme.themeName)
-    return { ...colors, ...userOverrides }
+    const merged = { ...colors, ...userOverrides }
+    const kinds = Object.keys(merged)
+    this.logger.info(`loaded ${kinds.length} symbol colors:`, kinds.join(', '))
+    return merged
   }
 
   private discoverActiveTheme(): DiscoveredTheme | undefined {

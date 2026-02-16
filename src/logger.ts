@@ -1,18 +1,5 @@
 import * as vscode from 'vscode'
 
-type Severity = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'
-
-function formatTimestamp(date: Date) {
-  const y = date.getFullYear()
-  const mo = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  const h = String(date.getHours()).padStart(2, '0')
-  const mi = String(date.getMinutes()).padStart(2, '0')
-  const s = String(date.getSeconds()).padStart(2, '0')
-  const ms = String(date.getMilliseconds()).padStart(3, '0')
-  return `${y}-${mo}-${d} ${h}:${mi}:${s}.${ms}`
-}
-
 function formatArg(arg: unknown) {
   if (arg === null || arg === undefined) {
     return String(arg)
@@ -30,10 +17,10 @@ function formatArg(arg: unknown) {
 }
 
 export class Logger {
-  private static output: vscode.OutputChannel | undefined
+  private static output: vscode.LogOutputChannel | undefined
 
   private static ensureOutput() {
-    Logger.output ??= vscode.window.createOutputChannel('Semantic Imports')
+    Logger.output ??= vscode.window.createOutputChannel('Semantic Imports', { log: true })
     return Logger.output
   }
 
@@ -50,24 +37,18 @@ export class Logger {
   private constructor(private readonly tag: string) {}
 
   info(...args: unknown[]) {
-    this.log('INFO', args)
+    Logger.ensureOutput().info(`[${this.tag}]`, ...args.map(formatArg))
   }
 
   warn(...args: unknown[]) {
-    this.log('WARN', args)
+    Logger.ensureOutput().warn(`[${this.tag}]`, ...args.map(formatArg))
   }
 
   error(...args: unknown[]) {
-    this.log('ERROR', args)
+    Logger.ensureOutput().error(`[${this.tag}]`, ...args.map(formatArg))
   }
 
   debug(...args: unknown[]) {
-    this.log('DEBUG', args)
-  }
-
-  private log(severity: Severity, args: unknown[]) {
-    const output = Logger.ensureOutput()
-    const timestamp = formatTimestamp(new Date())
-    output.appendLine(`[${timestamp}][${this.tag}][${severity}] ${args.map(formatArg).join(' ')}`)
+    Logger.ensureOutput().debug(`[${this.tag}]`, ...args.map(formatArg))
   }
 }

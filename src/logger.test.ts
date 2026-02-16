@@ -7,15 +7,24 @@ class ServiceA {}
 class ServiceB {}
 
 describe('Logger', () => {
-  let appendLine: ReturnType<typeof vi.fn>
+  let infoFn: ReturnType<typeof vi.fn>
+  let warnFn: ReturnType<typeof vi.fn>
+  let errorFn: ReturnType<typeof vi.fn>
+  let debugFn: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-02-16T14:30:12.456Z'))
-    appendLine = vi.fn()
+    infoFn = vi.fn()
+    warnFn = vi.fn()
+    errorFn = vi.fn()
+    debugFn = vi.fn()
     vi.mocked(vscode.window.createOutputChannel).mockClear()
     vi.mocked(vscode.window.createOutputChannel).mockReturnValue({
-      appendLine,
+      info: infoFn,
+      warn: warnFn,
+      error: errorFn,
+      debug: debugFn,
+      trace: vi.fn(),
+      appendLine: vi.fn(),
       append: vi.fn(),
       clear: vi.fn(),
       show: vi.fn(),
@@ -23,12 +32,11 @@ describe('Logger', () => {
       name: 'Semantic Imports',
       hide: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel)
+    } as unknown as vscode.LogOutputChannel)
   })
 
   afterEach(() => {
     Logger.dispose()
-    vi.useRealTimers()
   })
 
   describe('create', () => {
@@ -36,47 +44,37 @@ describe('Logger', () => {
       const logger = Logger.create(TestClass)
       logger.info('hello')
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('[TestClass]'))
+      expect(infoFn).toHaveBeenCalledWith('[TestClass]', 'hello')
     })
   })
 
-  describe('log format', () => {
-    it('should format info log with timestamp, tag, and severity', () => {
+  describe('severity methods', () => {
+    it('should call output.info for info()', () => {
       const logger = Logger.create(TestClass)
       logger.info('hello world')
 
-      expect(appendLine).toHaveBeenCalledWith(
-        expect.stringMatching(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]\[TestClass\]\[INFO\] hello world$/),
-      )
+      expect(infoFn).toHaveBeenCalledWith('[TestClass]', 'hello world')
     })
 
-    it('should format warn log correctly', () => {
+    it('should call output.warn for warn()', () => {
       const logger = Logger.create(TestClass)
       logger.warn('something is off')
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('[WARN] something is off'))
+      expect(warnFn).toHaveBeenCalledWith('[TestClass]', 'something is off')
     })
 
-    it('should format error log correctly', () => {
+    it('should call output.error for error()', () => {
       const logger = Logger.create(TestClass)
       logger.error('failed')
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('[ERROR] failed'))
+      expect(errorFn).toHaveBeenCalledWith('[TestClass]', 'failed')
     })
 
-    it('should format debug log correctly', () => {
+    it('should call output.debug for debug()', () => {
       const logger = Logger.create(TestClass)
       logger.debug('details')
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('[DEBUG] details'))
-    })
-
-    it('should include timestamp with millisecond precision', () => {
-      const logger = Logger.create(TestClass)
-      logger.info('test')
-
-      const line = appendLine.mock.calls[0][0] as string
-      expect(line).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\]/)
+      expect(debugFn).toHaveBeenCalledWith('[TestClass]', 'details')
     })
   })
 
@@ -88,8 +86,8 @@ describe('Logger', () => {
       logger1.info('from A')
       logger2.info('from B')
 
-      expect(appendLine.mock.calls[0][0]).toContain('[ServiceA]')
-      expect(appendLine.mock.calls[1][0]).toContain('[ServiceB]')
+      expect(infoFn.mock.calls[0][0]).toBe('[ServiceA]')
+      expect(infoFn.mock.calls[1][0]).toBe('[ServiceB]')
     })
   })
 
@@ -98,35 +96,35 @@ describe('Logger', () => {
       const logger = Logger.create(TestClass)
       logger.info('data', { key: 'value', count: 42 })
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('data {"key":"value","count":42}'))
+      expect(infoFn).toHaveBeenCalledWith('[TestClass]', 'data', '{"key":"value","count":42}')
     })
 
     it('should display class instances as ClassName {}', () => {
       const logger = Logger.create(TestClass)
       logger.info('received', new ServiceA())
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('received ServiceA {}'))
+      expect(infoFn).toHaveBeenCalledWith('[TestClass]', 'received', 'ServiceA {}')
     })
 
     it('should serialize arrays as JSON', () => {
       const logger = Logger.create(TestClass)
       logger.info('items', [1, 2, 3])
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('items [1,2,3]'))
+      expect(infoFn).toHaveBeenCalledWith('[TestClass]', 'items', '[1,2,3]')
     })
 
     it('should convert primitives with String()', () => {
       const logger = Logger.create(TestClass)
       logger.info('values', 42, true, 'text')
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('values 42 true text'))
+      expect(infoFn).toHaveBeenCalledWith('[TestClass]', 'values', '42', 'true', 'text')
     })
 
     it('should handle null and undefined', () => {
       const logger = Logger.create(TestClass)
       logger.info('empty', null, undefined)
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('empty null undefined'))
+      expect(infoFn).toHaveBeenCalledWith('[TestClass]', 'empty', 'null', 'undefined')
     })
 
     it('should use error stack for Error instances', () => {
@@ -134,18 +132,18 @@ describe('Logger', () => {
       const error = new Error('boom')
       logger.error('failed', error)
 
-      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('failed Error: boom'))
+      expect(errorFn).toHaveBeenCalledWith('[TestClass]', 'failed', expect.stringContaining('Error: boom'))
     })
   })
 
   describe('output channel', () => {
-    it('should create output channel lazily on first log call', () => {
+    it('should create log output channel lazily on first log call', () => {
       Logger.create(TestClass)
       expect(vscode.window.createOutputChannel).not.toHaveBeenCalled()
 
       const logger = Logger.create(TestClass)
       logger.info('trigger')
-      expect(vscode.window.createOutputChannel).toHaveBeenCalledWith('Semantic Imports')
+      expect(vscode.window.createOutputChannel).toHaveBeenCalledWith('Semantic Imports', { log: true })
     })
 
     it('should reuse the same output channel across loggers', () => {

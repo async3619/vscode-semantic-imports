@@ -107,6 +107,7 @@ export class DecorationService implements vscode.Disposable {
     let tsServerLoading = false
 
     if (symbolsToResolve.length > 0) {
+      this.logger.debug(`resolving ${symbolsToResolve.length} symbols, ${symbolKinds.size} from cache`)
       for (const { resolver } of this.phases) {
         const targets = symbolsToResolve.filter((s) => !symbolKinds.has(s))
         if (targets.length === 0) {
@@ -130,14 +131,20 @@ export class DecorationService implements vscode.Disposable {
         }
       }
 
+      const unresolved = symbolsToResolve.filter((s) => !symbolKinds.has(s))
+      if (unresolved.length > 0) {
+        this.logger.debug(`could not resolve: ${unresolved.join(', ')}`)
+      }
+
       this.documentCaches.set(docUri, { importSectionText, symbolKinds: new Map(symbolKinds) })
     } else {
+      this.logger.debug(`all ${uniqueSymbols.length} symbols resolved from cache`)
       this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
     }
 
-    // Schedule retry if tsserver was loading and retries remain
     if (tsServerLoading && retryCount < MAX_RETRIES) {
       const delay = RETRY_DELAY_MS * (retryCount + 1)
+      this.logger.warn(`waiting for tsserver, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
       const timeout = setTimeout(() => {
         this.retryTimeouts.delete(docUri)
         this.applyImportDecorations(editor, retryCount + 1).catch(() => {
@@ -177,21 +184,23 @@ export class DecorationService implements vscode.Disposable {
 
     await Promise.all(
       symbols.map(async (symbol) => {
+        const label = symbolSources[symbol] ? `${symbol} from '${symbolSources[symbol]}'` : symbol
         try {
           const occurrence = occurrenceBySymbol.get(symbol)
           if (!occurrence) {
             return
           }
-
-          const label = symbolSources[symbol] ? `${symbol} from '${symbolSources[symbol]}'` : symbol
           this.logger.debug(`resolving ${label} via '${resolver.name}' resolver`)
+          const start = performance.now()
           const kind = await resolver.resolve(document, occurrence.range.start)
           if (kind && !symbolKinds.has(symbol)) {
             symbolKinds.set(symbol, kind)
-            this.logger.info(`resolved ${label} → ${kind} via '${resolver.name}' resolver`)
+            const elapsed = Math.round(performance.now() - start)
+            this.logger.info(`resolved ${label} → '${kind}' via '${resolver.name}' resolver (in ${elapsed}ms)`)
           }
         } catch (error) {
           if (error instanceof TsServerLoadingError) {
+            this.logger.warn(`tsserver is still loading, skipping ${label}`)
             tsServerLoading = true
           }
         }
