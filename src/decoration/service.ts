@@ -5,6 +5,7 @@ import type { BaseSymbolResolver, SymbolKind } from '../symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver, TsServerLoadingError } from '../symbol'
 import { Logger } from '../logger'
 import type { SymbolColorMap } from '../theme'
+import { TypeScriptServerProbe } from '../tsServer'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
 const MAX_RETRIES = 5
@@ -18,13 +19,16 @@ interface ResolverPhase {
 export class DecorationService implements vscode.Disposable {
   private readonly logger = Logger.create(DecorationService)
   private readonly phases: ResolverPhase[]
+  private readonly probe: TypeScriptServerProbe
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
   private readonly retryTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly probeControllers = new Map<string, AbortController>()
   private colors: SymbolColorMap
 
-  constructor(colors: SymbolColorMap = {}) {
+  constructor(colors: SymbolColorMap = {}, probe?: TypeScriptServerProbe) {
     this.colors = colors
+    this.probe = probe ?? new TypeScriptServerProbe()
     this.phases = [
       { resolver: new PluginSymbolResolver() },
       { resolver: new HoverSymbolResolver() },
@@ -44,8 +48,9 @@ export class DecorationService implements vscode.Disposable {
     const document = editor.document
     const docUri = document.uri.toString()
 
-    // Cancel any pending retry for this document
+    // Cancel any pending retry and probe for this document
     this.cancelRetry(docUri)
+    this.cancelProbe(docUri)
 
     const text = document.getText()
     const { symbols, symbolSources, importEndLine } = parseImports(text)
@@ -109,7 +114,25 @@ export class DecorationService implements vscode.Disposable {
     let tsServerLoading = false
 
     if (symbolsToResolve.length > 0) {
-      this.logger.debug(`resolving ${symbolsToResolve.length} symbols, ${symbolKinds.size} from cache`)
+      this.logger.info(`resolving ${symbolsToResolve.length} symbols, ${symbolKinds.size} from cache`)
+
+      // Probe tsserver readiness before entering resolve pipeline
+      const probeTarget = occurrenceBySymbol.get(symbolsToResolve[0])
+      if (probeTarget) {
+        const controller = new AbortController()
+        this.probeControllers.set(docUri, controller)
+
+        const ready = await this.probe.waitForReady(document, probeTarget.range.start, controller.signal)
+        this.probeControllers.delete(docUri)
+
+        if (controller.signal.aborted) {
+          return
+        }
+        if (!ready) {
+          this.logger.warn('tsserver probe timed out, proceeding with resolve pipeline')
+        }
+      }
+
       for (const { resolver } of this.phases) {
         const targets = symbolsToResolve.filter((s) => !symbolKinds.has(s))
         if (targets.length === 0) {
@@ -135,7 +158,13 @@ export class DecorationService implements vscode.Disposable {
 
       const unresolved = symbolsToResolve.filter((s) => !symbolKinds.has(s))
       if (unresolved.length > 0) {
-        this.logger.debug(`could not resolve: ${unresolved.map((s) => `'${s}'`).join(', ')}`)
+        this.logger.info(`could not resolve: ${unresolved.map((s) => `'${s}'`).join(', ')}`)
+      }
+
+      // Post-resolve fallback: if ALL symbols to resolve failed, treat as tsserver not ready
+      if (unresolved.length === symbolsToResolve.length && !tsServerLoading) {
+        this.logger.info('all symbols unresolved, treating as tsserver not ready')
+        tsServerLoading = true
       }
 
       this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
@@ -160,6 +189,7 @@ export class DecorationService implements vscode.Disposable {
 
   clearDocumentCache(uri: string) {
     this.cancelRetry(uri)
+    this.cancelProbe(uri)
     this.documentCaches.delete(uri)
   }
 
@@ -168,6 +198,10 @@ export class DecorationService implements vscode.Disposable {
       clearTimeout(timeout)
     }
     this.retryTimeouts.clear()
+    for (const controller of this.probeControllers.values()) {
+      controller.abort()
+    }
+    this.probeControllers.clear()
     for (const type of this.decorationTypes.values()) {
       type.dispose()
     }
@@ -246,6 +280,14 @@ export class DecorationService implements vscode.Disposable {
 
     for (const [color, ranges] of rangesByColor) {
       editor.setDecorations(this.getDecorationType(color), ranges)
+    }
+  }
+
+  private cancelProbe(docUri: string) {
+    const existing = this.probeControllers.get(docUri)
+    if (existing) {
+      existing.abort()
+      this.probeControllers.delete(docUri)
     }
   }
 

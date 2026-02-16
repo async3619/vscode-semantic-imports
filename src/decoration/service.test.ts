@@ -5,6 +5,7 @@ import type { DocumentCache } from './types'
 import type { BaseSymbolResolver } from '../symbol'
 import { SymbolKind, TsServerLoadingError } from '../symbol'
 import type { SymbolColorMap } from '../theme'
+import { TypeScriptServerProbe } from '../tsServer'
 
 vi.mock('../importParser', () => ({
   parseImports: vi.fn(),
@@ -14,9 +15,11 @@ import { parseImports } from '../importParser'
 
 type ServiceInternals = {
   phases: { resolver: BaseSymbolResolver }[]
+  probe: TypeScriptServerProbe
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
   documentCaches: Map<string, DocumentCache>
   retryTimeouts: Map<string, ReturnType<typeof setTimeout>>
+  probeControllers: Map<string, AbortController>
   colors: SymbolColorMap
   getDecorationType: (color: string) => vscode.TextEditorDecorationType
 }
@@ -65,12 +68,20 @@ function stubAllResolvers(service: DecorationService) {
   }
 }
 
+function createMockProbe() {
+  const probe = new TypeScriptServerProbe()
+  vi.spyOn(probe, 'waitForReady').mockResolvedValue(true)
+  return probe
+}
+
 describe('DecorationService', () => {
   let service: DecorationService
+  let mockProbe: TypeScriptServerProbe
 
   beforeEach(() => {
     vi.useFakeTimers()
-    service = new DecorationService(TEST_COLORS)
+    mockProbe = createMockProbe()
+    service = new DecorationService(TEST_COLORS, mockProbe)
     vi.mocked(parseImports).mockReset()
     vi.mocked(vscode.commands.executeCommand).mockReset()
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
@@ -319,7 +330,7 @@ describe('DecorationService', () => {
 
       it('should skip symbols whose kind has no color in the map', async () => {
         const partialColors: SymbolColorMap = { [SymbolKind.Function]: '#DCDCAA' }
-        service = new DecorationService(partialColors)
+        service = new DecorationService(partialColors, mockProbe)
         stubAllResolvers(service)
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], symbolSources: {}, importEndLine: 1 })
@@ -338,7 +349,7 @@ describe('DecorationService', () => {
       })
 
       it('should not apply any decorations when colors map is empty', async () => {
-        service = new DecorationService({})
+        service = new DecorationService({}, mockProbe)
         stubAllResolvers(service)
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], symbolSources: {}, importEndLine: 1 })
@@ -528,11 +539,20 @@ describe('DecorationService', () => {
         expect(resolveSpy).toHaveBeenCalledTimes(2)
       })
 
-      it('should not schedule retry for non-TsServerLoadingError', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(hoverResolver(service), 'resolve').mockRejectedValue(new Error('other error'))
+      it('should not schedule retry for non-TsServerLoadingError when some symbols resolve', async () => {
+        vi.mocked(parseImports).mockReturnValue({
+          symbols: ['useState', 'broken'],
+          symbolSources: {},
+          importEndLine: 1,
+        })
+        vi.spyOn(hoverResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
+          if (pos.character === 9) {
+            return SymbolKind.Function
+          }
+          throw new Error('other error')
+        })
 
-        const editor = createMockEditor(["import { useState } from 'react'"])
+        const editor = createMockEditor(["import { useState, broken } from 'react'"])
         await service.applyImportDecorations(editor)
 
         expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(false)
@@ -560,6 +580,152 @@ describe('DecorationService', () => {
         expect(decoratedCall).toBeDefined()
 
         // Retry should be scheduled for MyClass
+        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(true)
+      })
+    })
+
+    describe('tsserver probe', () => {
+      it('should call probe.waitForReady before resolver pipeline when symbols need resolving', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
+        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor)
+
+        expect(mockProbe.waitForReady).toHaveBeenCalledOnce()
+        expect(mockProbe.waitForReady).toHaveBeenCalledWith(
+          editor.document,
+          expect.objectContaining({ line: 0, character: 9 }),
+          expect.any(AbortSignal),
+        )
+      })
+
+      it('should not call probe when all symbols are cached', async () => {
+        const importLine = "import { useState } from 'react'"
+        const docUri = 'file:///test.ts'
+
+        internals(service).documentCaches.set(docUri, {
+          importSectionText: importLine,
+          symbolKinds: new Map([['useState', SymbolKind.Function]]),
+        })
+
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
+
+        const editor = createMockEditor([importLine])
+        await service.applyImportDecorations(editor)
+
+        expect(mockProbe.waitForReady).not.toHaveBeenCalled()
+      })
+
+      it('should abort previous probe when new decoration request arrives', async () => {
+        vi.mocked(mockProbe.waitForReady)
+          .mockImplementationOnce(
+            (_doc, _pos, signal) =>
+              new Promise<boolean>((resolve) => {
+                signal.addEventListener('abort', () => resolve(false), { once: true })
+              }),
+          )
+          .mockResolvedValueOnce(true)
+
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
+        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+
+        // First call starts probe (blocks on promise)
+        const firstPromise = service.applyImportDecorations(editor)
+        await vi.advanceTimersByTimeAsync(0)
+
+        // Second call should abort the first probe
+        const secondPromise = service.applyImportDecorations(editor)
+        await vi.advanceTimersByTimeAsync(0)
+
+        await Promise.all([firstPromise, secondPromise])
+
+        // First probe should have been aborted, second should proceed
+        expect(mockProbe.waitForReady).toHaveBeenCalledTimes(2)
+      })
+
+      it('should return early when probe is cancelled (signal aborted)', async () => {
+        vi.mocked(mockProbe.waitForReady).mockImplementation(async (_doc, _pos, signal) => {
+          // Simulate abort during wait
+          return !signal.aborted
+        })
+
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
+        const spy = vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+
+        // Manually abort before probe completes
+        const firstPromise = service.applyImportDecorations(editor)
+        internals(service).probeControllers.get(editor.document.uri.toString())?.abort()
+        await firstPromise
+
+        // Resolver should not have been called since probe was aborted
+        expect(spy).not.toHaveBeenCalled()
+      })
+
+      it('should proceed with resolvers even when probe times out', async () => {
+        vi.mocked(mockProbe.waitForReady).mockResolvedValue(false)
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
+        const spy = vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor)
+
+        expect(spy).toHaveBeenCalled()
+      })
+
+      it('should clean up probe controllers on dispose', () => {
+        const controller = new AbortController()
+        const abortSpy = vi.spyOn(controller, 'abort')
+        internals(service).probeControllers.set('file:///a.ts', controller)
+
+        service.dispose()
+
+        expect(abortSpy).toHaveBeenCalledOnce()
+        expect(internals(service).probeControllers.size).toBe(0)
+      })
+    })
+
+    describe('post-resolve fallback', () => {
+      it('should schedule retry when all symbols remain unresolved', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['unknown'], symbolSources: {}, importEndLine: 1 })
+        // All resolvers return undefined (from stubAllResolvers)
+
+        const editor = createMockEditor(["import { unknown } from 'mod'"])
+        await service.applyImportDecorations(editor)
+
+        // Should schedule retry because all symbols are unresolved
+        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(true)
+      })
+
+      it('should not schedule fallback retry when at least one symbol was resolved', async () => {
+        vi.mocked(parseImports).mockReturnValue({
+          symbols: ['resolved', 'unresolved'],
+          symbolSources: {},
+          importEndLine: 1,
+        })
+        vi.spyOn(pluginResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
+          return pos.character === 9 ? SymbolKind.Function : undefined
+        })
+
+        const editor = createMockEditor(["import { resolved, unresolved } from 'mod'"])
+        await service.applyImportDecorations(editor)
+
+        // Should NOT schedule retry because 'resolved' was resolved
+        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(false)
+      })
+
+      it('should not double-schedule retry when TsServerLoadingError already triggered retry', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['loading'], symbolSources: {}, importEndLine: 1 })
+        vi.spyOn(hoverResolver(service), 'resolve').mockRejectedValue(new TsServerLoadingError())
+
+        const editor = createMockEditor(["import { loading } from 'mod'"])
+        await service.applyImportDecorations(editor)
+
+        // tsServerLoading is already true from TsServerLoadingError, fallback should not override
         expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(true)
       })
     })
