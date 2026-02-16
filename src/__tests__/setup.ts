@@ -10,9 +10,19 @@ class MockPosition {
 class MockRange {
   public readonly start: MockPosition
   public readonly end: MockPosition
-  constructor(start: MockPosition, end: MockPosition) {
-    this.start = start
-    this.end = end
+  constructor(
+    startOrLine: MockPosition | number,
+    endOrChar: MockPosition | number,
+    endLine?: number,
+    endChar?: number,
+  ) {
+    if (typeof startOrLine === 'number') {
+      this.start = new MockPosition(startOrLine, endOrChar as number)
+      this.end = new MockPosition(endLine!, endChar!)
+    } else {
+      this.start = startOrLine
+      this.end = endOrChar as MockPosition
+    }
   }
 }
 
