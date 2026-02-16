@@ -3,14 +3,6 @@ import * as vscode from 'vscode'
 import { SemanticTokenSymbolResolver } from './semanticToken'
 import { SymbolKind } from '../types'
 
-type ResolverInternals = {
-  output: vscode.OutputChannel
-}
-
-function internals(resolver: SemanticTokenSymbolResolver) {
-  return resolver as unknown as ResolverInternals
-}
-
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
 }
@@ -68,7 +60,7 @@ describe('SemanticTokenSymbolResolver', () => {
   let resolver: SemanticTokenSymbolResolver
 
   beforeEach(() => {
-    resolver = new SemanticTokenSymbolResolver(vscode.window.createOutputChannel('test'))
+    resolver = new SemanticTokenSymbolResolver()
     vi.mocked(vscode.commands.executeCommand).mockReset()
     vi.mocked(vscode.workspace.openTextDocument).mockClear()
   })
@@ -202,31 +194,6 @@ describe('SemanticTokenSymbolResolver', () => {
 
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBe(SymbolKind.Interface)
-  })
-
-  it('should log definition location to output channel', async () => {
-    mockSemanticTokenResolution({
-      definitions: [createMockLocation('file:///def.ts', 5, 4, 10)],
-      legend: DEFAULT_LEGEND,
-      tokens: { data: createTokenData([[5, 4, 6, 6]]) },
-    })
-
-    await resolver.resolve(createMockDocument(), createMockPosition(3, 7))
-
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[definition] 3:7'))
-  })
-
-  it('should log resolved semantic token type to output channel', async () => {
-    mockSemanticTokenResolution({
-      definitions: [createMockLocation('file:///def.ts', 0, 0, 3)],
-      legend: DEFAULT_LEGEND,
-      tokens: { data: new Uint32Array([0, 0, 3, 6, 0]) },
-    })
-
-    await resolver.resolve(createMockDocument(), createMockPosition())
-
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[semantic]'))
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('function'))
   })
 
   it('should open target document before querying semantic tokens', async () => {

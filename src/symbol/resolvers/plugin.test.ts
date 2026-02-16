@@ -1,16 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
+import { TsServerLoadingError } from '../errors'
 import { PluginSymbolResolver } from './plugin'
 import { SymbolKind } from '../types'
 import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
-
-type ResolverInternals = {
-  output: vscode.OutputChannel
-}
-
-function internals(resolver: PluginSymbolResolver) {
-  return resolver as unknown as ResolverInternals
-}
 
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
@@ -52,7 +45,7 @@ describe('PluginSymbolResolver', () => {
   let resolver: PluginSymbolResolver
 
   beforeEach(() => {
-    resolver = new PluginSymbolResolver(vscode.window.createOutputChannel('test'))
+    resolver = new PluginSymbolResolver()
     vi.mocked(vscode.commands.executeCommand).mockReset()
   })
 
@@ -125,20 +118,6 @@ describe('PluginSymbolResolver', () => {
     expect(result).toBeUndefined()
   })
 
-  it('should log error message when response is an error', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: createCompletionInfoWithResponse({
-        id: 'error',
-        error: { name: 'PluginError', message: 'no program' },
-      }),
-    })
-    await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(
-      expect.stringContaining('[plugin] error: no program'),
-    )
-  })
-
   it('should call tsserverRequest with completionInfo and triggerCharacter', async () => {
     mockPluginResolution({
       definitions: [createMockLocation('file:///def.ts', 5, 4, 10)],
@@ -164,6 +143,35 @@ describe('PluginSymbolResolver', () => {
     expect(result).toBeUndefined()
   })
 
+  it('should throw TsServerLoadingError when tsserverRequest throws "No Project" error', async () => {
+    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
+      if (command === 'vscode.executeDefinitionProvider') {
+        return [createMockLocation()]
+      }
+      if (command === 'typescript.tsserverRequest') {
+        throw new Error('No Project.')
+      }
+      return null
+    })
+
+    await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
+  })
+
+  it('should return undefined when tsserverRequest throws a non "No Project" error', async () => {
+    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
+      if (command === 'vscode.executeDefinitionProvider') {
+        return [createMockLocation()]
+      }
+      if (command === 'typescript.tsserverRequest') {
+        throw new Error('Some other error')
+      }
+      return null
+    })
+
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+    expect(result).toBeUndefined()
+  })
+
   it('should handle LocationLink with targetSelectionRange', async () => {
     const targetUri = vscode.Uri.parse('file:///linked.ts')
     const targetRange = new vscode.Range(new vscode.Position(10, 0), new vscode.Position(10, 20))
@@ -181,16 +189,5 @@ describe('PluginSymbolResolver', () => {
 
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
-  })
-
-  it('should log plugin resolution to output channel', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: createCompletionInfoWithResponse({ id: 'resolve', isFunction: true }),
-    })
-
-    await resolver.resolve(createMockDocument(), createMockPosition(3, 7))
-
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[plugin] 3:7'))
   })
 })

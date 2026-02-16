@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { Logger } from '../logger'
 import type { SymbolColorMap } from './types'
 import { parseThemeFile } from './utils/parseThemeFile'
 import { extractSymbolColors } from './utils/extractSymbolColors'
@@ -18,39 +19,28 @@ interface DiscoveredTheme {
 }
 
 export class ThemeColorResolver {
-  constructor(private readonly output: vscode.OutputChannel) {}
+  private readonly logger = Logger.create(ThemeColorResolver)
 
   async loadColors(): Promise<SymbolColorMap> {
-    try {
-      const theme = this.discoverActiveTheme()
-      if (!theme) {
-        this.output.appendLine('[theme] active theme not found')
-        return {}
-      }
-
-      this.output.appendLine(`[theme] parsing theme at ${theme.themePath}`)
-      const parsed = await parseThemeFile(theme.extensionUri, theme.themePath)
-      if (!parsed) {
-        this.output.appendLine('[theme] failed to parse theme file')
-        return {}
-      }
-
-      const colors = extractSymbolColors(parsed)
-      this.output.appendLine(`[theme] theme colors: ${JSON.stringify(colors)}`)
-
-      const userOverrides = readUserColorCustomizations(theme.themeName)
-      this.output.appendLine(`[theme] user overrides: ${JSON.stringify(userOverrides)}`)
-
-      const merged = { ...colors, ...userOverrides }
-      this.output.appendLine(`[theme] merged colors: ${JSON.stringify(merged)}`)
-      return merged
-    } catch (error: unknown) {
-      this.output.appendLine('[theme] unexpected error loading colors')
-      if (error instanceof Error) {
-        this.output.appendLine(`[theme] ${error.message}`)
-      }
+    const theme = this.discoverActiveTheme()
+    if (!theme) {
+      this.logger.warn('no active theme found')
       return {}
     }
+
+    this.logger.info(`loading colors from theme '${theme.themeName}'`)
+    const parsed = await parseThemeFile(theme.extensionUri, theme.themePath)
+    if (!parsed) {
+      this.logger.warn(`failed to parse theme file for '${theme.themeName}'`)
+      return {}
+    }
+
+    const colors = extractSymbolColors(parsed)
+    const userOverrides = readUserColorCustomizations(theme.themeName)
+    const merged = { ...colors, ...userOverrides }
+    const kinds = Object.keys(merged)
+    this.logger.info(`loaded ${kinds.length} symbol colors:`, kinds.join(', '))
+    return merged
   }
 
   private discoverActiveTheme(): DiscoveredTheme | undefined {
