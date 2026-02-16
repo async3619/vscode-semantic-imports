@@ -18,39 +18,20 @@ interface DiscoveredTheme {
 }
 
 export class ThemeColorResolver {
-  constructor(private readonly output: vscode.OutputChannel) {}
-
   async loadColors(): Promise<SymbolColorMap> {
-    try {
-      const theme = this.discoverActiveTheme()
-      if (!theme) {
-        this.output.appendLine('[theme] active theme not found')
-        return {}
-      }
-
-      this.output.appendLine(`[theme] parsing theme at ${theme.themePath}`)
-      const parsed = await parseThemeFile(theme.extensionUri, theme.themePath)
-      if (!parsed) {
-        this.output.appendLine('[theme] failed to parse theme file')
-        return {}
-      }
-
-      const colors = extractSymbolColors(parsed)
-      this.output.appendLine(`[theme] theme colors: ${JSON.stringify(colors)}`)
-
-      const userOverrides = readUserColorCustomizations(theme.themeName)
-      this.output.appendLine(`[theme] user overrides: ${JSON.stringify(userOverrides)}`)
-
-      const merged = { ...colors, ...userOverrides }
-      this.output.appendLine(`[theme] merged colors: ${JSON.stringify(merged)}`)
-      return merged
-    } catch (error: unknown) {
-      this.output.appendLine('[theme] unexpected error loading colors')
-      if (error instanceof Error) {
-        this.output.appendLine(`[theme] ${error.message}`)
-      }
+    const theme = this.discoverActiveTheme()
+    if (!theme) {
       return {}
     }
+
+    const parsed = await parseThemeFile(theme.extensionUri, theme.themePath)
+    if (!parsed) {
+      return {}
+    }
+
+    const colors = extractSymbolColors(parsed)
+    const userOverrides = readUserColorCustomizations(theme.themeName)
+    return { ...colors, ...userOverrides }
   }
 
   private discoverActiveTheme(): DiscoveredTheme | undefined {

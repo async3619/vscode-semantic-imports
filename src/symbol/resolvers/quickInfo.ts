@@ -33,10 +33,6 @@ export class QuickInfoSymbolResolver extends BaseSymbolResolver {
       return undefined
     }
 
-    this.output.appendLine(
-      `[quickinfo] ${position.line}:${position.character} → def ${targetUri.fsPath}:${targetPos.line}:${targetPos.character}`,
-    )
-
     const result = await vscode.commands.executeCommand<QuickInfoResponse>('typescript.tsserverRequest', 'quickinfo', {
       file: targetUri.fsPath,
       line: targetPos.line + 1,
@@ -48,7 +44,6 @@ export class QuickInfoSymbolResolver extends BaseSymbolResolver {
       return undefined
     }
 
-    this.output.appendLine(`[quickinfo] ${position.line}:${position.character} → ${kind}`)
     return toSymbolKind(kind)
   }
 }

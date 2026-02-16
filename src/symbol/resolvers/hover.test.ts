@@ -10,14 +10,6 @@ vi.mock('../utils/loadTypeScript', () => ({
   loadTypeScript: vi.fn(() => require('typescript')),
 }))
 
-type ResolverInternals = {
-  output: vscode.OutputChannel
-}
-
-function internals(resolver: HoverSymbolResolver) {
-  return resolver as unknown as ResolverInternals
-}
-
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
 }
@@ -30,7 +22,7 @@ describe('HoverSymbolResolver', () => {
   let resolver: HoverSymbolResolver
 
   beforeEach(() => {
-    resolver = new HoverSymbolResolver(vscode.window.createOutputChannel('test'))
+    resolver = new HoverSymbolResolver()
     vi.mocked(vscode.commands.executeCommand).mockReset()
   })
 
@@ -122,16 +114,6 @@ describe('HoverSymbolResolver', () => {
     await resolver.resolve(doc, pos)
 
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith('vscode.executeHoverProvider', doc.uri, pos)
-  })
-
-  it('should log hover content to output channel', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-      { contents: [new vscode.MarkdownString('(alias) function foo(): void')] },
-    ])
-
-    await resolver.resolve(createMockDocument(), createMockPosition(3, 7))
-
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[hover] 3:7'))
   })
 
   it('should handle MarkedString object with language and value', async () => {
@@ -251,16 +233,6 @@ describe('HoverSymbolResolver', () => {
         { contents: [new vscode.MarkdownString('(loading...)')] },
       ])
       await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
-    })
-
-    it('should log loading detection to output channel', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(loading...)')] },
-      ])
-      await resolver.resolve(createMockDocument(), createMockPosition(2, 5)).catch(() => {})
-      expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining('[hover] loading detected'),
-      )
     })
   })
 })

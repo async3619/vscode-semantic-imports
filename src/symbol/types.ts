@@ -12,6 +12,5 @@ export enum SymbolKind {
 
 export abstract class BaseSymbolResolver {
   abstract readonly name: string
-  constructor(protected readonly output: vscode.OutputChannel) {}
   abstract resolve(document: vscode.TextDocument, position: vscode.Position): Promise<SymbolKind | undefined>
 }

@@ -9,9 +9,8 @@ function isSupported(document: vscode.TextDocument) {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  const output = vscode.window.createOutputChannel('Semantic Imports')
-  const themeResolver = new ThemeColorResolver(output)
-  const service = new DecorationService({}, output)
+  const themeResolver = new ThemeColorResolver()
+  const service = new DecorationService()
 
   function triggerDecoration(editor: vscode.TextEditor) {
     service.applyImportDecorations(editor).catch(() => {
@@ -37,7 +36,6 @@ export function activate(context: vscode.ExtensionContext) {
   refreshColors()
 
   context.subscriptions.push(
-    output,
     service,
     vscode.window.onDidChangeActiveColorTheme(() => {
       refreshColors()

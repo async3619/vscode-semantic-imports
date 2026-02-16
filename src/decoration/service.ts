@@ -13,20 +13,18 @@ interface ResolverPhase {
 }
 
 export class DecorationService implements vscode.Disposable {
-  private readonly output: vscode.OutputChannel
   private readonly phases: ResolverPhase[]
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
   private readonly retryTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
   private colors: SymbolColorMap
 
-  constructor(colors: SymbolColorMap = {}, output: vscode.OutputChannel) {
-    this.output = output
+  constructor(colors: SymbolColorMap = {}) {
     this.colors = colors
     this.phases = [
-      { resolver: new PluginSymbolResolver(this.output) },
-      { resolver: new HoverSymbolResolver(this.output) },
-      { resolver: new SemanticTokenSymbolResolver(this.output) },
+      { resolver: new PluginSymbolResolver() },
+      { resolver: new HoverSymbolResolver() },
+      { resolver: new SemanticTokenSymbolResolver() },
     ]
   }
 
@@ -107,10 +105,6 @@ export class DecorationService implements vscode.Disposable {
     let tsServerLoading = false
 
     if (symbolsToResolve.length > 0) {
-      this.output.appendLine(
-        `[cache] resolving ${symbolsToResolve.length}/${uniqueSymbols.length} symbols for ${docUri}`,
-      )
-
       for (const { resolver } of this.phases) {
         const targets = symbolsToResolve.filter((s) => !symbolKinds.has(s))
         if (targets.length === 0) {
@@ -129,14 +123,12 @@ export class DecorationService implements vscode.Disposable {
 
       this.documentCaches.set(docUri, { importSectionText, symbolKinds: new Map(symbolKinds) })
     } else {
-      this.output.appendLine(`[cache] full hit for ${docUri}`)
       this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
     }
 
     // Schedule retry if tsserver was loading and retries remain
     if (tsServerLoading && retryCount < MAX_RETRIES) {
       const delay = RETRY_DELAY_MS * (retryCount + 1)
-      this.output.appendLine(`[retry] scheduling retry ${retryCount + 1}/${MAX_RETRIES} in ${delay}ms for ${docUri}`)
       const timeout = setTimeout(() => {
         this.retryTimeouts.delete(docUri)
         this.applyImportDecorations(editor, retryCount + 1).catch(() => {
@@ -183,7 +175,6 @@ export class DecorationService implements vscode.Disposable {
 
           const kind = await resolver.resolve(document, occurrence.range.start)
           if (kind && !symbolKinds.has(symbol)) {
-            this.output.appendLine(`[result] \`${symbol}\` -> \`${kind}\` (${resolver.name})`)
             symbolKinds.set(symbol, kind)
           }
         } catch (error) {

@@ -26,10 +26,8 @@ export class HoverSymbolResolver extends BaseSymbolResolver {
     for (const hover of hovers) {
       for (const content of hover.contents) {
         const text = extractContentText(content)
-        this.output.appendLine(`[hover] ${position.line}:${position.character} → ${text.slice(0, 200)}`)
 
         if (/\(loading\.\.\.\)/i.test(text)) {
-          this.output.appendLine(`[hover] loading detected, tsserver may not be ready`)
           throw new TsServerLoadingError()
         }
 

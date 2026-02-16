@@ -47,16 +47,6 @@ function createMockEditor(lines: string[]) {
   } as unknown as vscode.TextEditor
 }
 
-function createMockOutput() {
-  return {
-    appendLine: vi.fn(),
-    append: vi.fn(),
-    clear: vi.fn(),
-    show: vi.fn(),
-    dispose: vi.fn(),
-  } as unknown as vscode.OutputChannel
-}
-
 function pluginResolver(service: DecorationService) {
   return internals(service).phases[0].resolver
 }
@@ -77,12 +67,10 @@ function stubAllResolvers(service: DecorationService) {
 
 describe('DecorationService', () => {
   let service: DecorationService
-  let output: vscode.OutputChannel
 
   beforeEach(() => {
     vi.useFakeTimers()
-    output = createMockOutput()
-    service = new DecorationService(TEST_COLORS, output)
+    service = new DecorationService(TEST_COLORS)
     vi.mocked(parseImports).mockReset()
     vi.mocked(vscode.commands.executeCommand).mockReset()
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
@@ -293,7 +281,7 @@ describe('DecorationService', () => {
 
       it('should skip symbols whose kind has no color in the map', async () => {
         const partialColors: SymbolColorMap = { [SymbolKind.Function]: '#DCDCAA' }
-        service = new DecorationService(partialColors, output)
+        service = new DecorationService(partialColors)
         stubAllResolvers(service)
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], importEndLine: 1 })
@@ -312,7 +300,7 @@ describe('DecorationService', () => {
       })
 
       it('should not apply any decorations when colors map is empty', async () => {
-        service = new DecorationService({}, output)
+        service = new DecorationService({})
         stubAllResolvers(service)
 
         vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], importEndLine: 1 })
@@ -354,7 +342,6 @@ describe('DecorationService', () => {
         await service.applyImportDecorations(editor)
 
         expect(spy).not.toHaveBeenCalled()
-        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[cache] full hit'))
       })
 
       it('should invalidate cache when importSectionText changes', async () => {
@@ -391,7 +378,6 @@ describe('DecorationService', () => {
 
         // Only useEffect should be resolved, not useState
         expect(spy).toHaveBeenCalledTimes(1)
-        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('resolving 1/2'))
       })
 
       it('should update cache after resolving new symbols', async () => {
@@ -424,31 +410,6 @@ describe('DecorationService', () => {
         await service.applyImportDecorations(editor)
 
         expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(true)
-      })
-
-      it('should log retry scheduling', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
-        vi.spyOn(hoverResolver(service), 'resolve').mockRejectedValue(new TsServerLoadingError())
-
-        const editor = createMockEditor(["import { useState } from 'react'"])
-        await service.applyImportDecorations(editor)
-
-        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[retry] scheduling retry 1/5'))
-      })
-
-      it('should use linear backoff for retry delays', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], importEndLine: 1 })
-        vi.spyOn(hoverResolver(service), 'resolve').mockRejectedValue(new TsServerLoadingError())
-
-        const editor = createMockEditor(["import { useState } from 'react'"])
-
-        // First call: retryCount=0 → delay=500
-        await service.applyImportDecorations(editor, 0)
-        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('in 500ms'))
-
-        // Second call: retryCount=1 → delay=1000
-        await service.applyImportDecorations(editor, 1)
-        expect(output.appendLine).toHaveBeenCalledWith(expect.stringContaining('in 1000ms'))
       })
 
       it('should not schedule retry when max retries exceeded', async () => {
@@ -682,12 +643,6 @@ describe('DecorationService', () => {
       service.dispose()
 
       expect(internals(service).documentCaches.size).toBe(0)
-    })
-
-    it('should not dispose the output channel (owned by extension)', () => {
-      service.dispose()
-
-      expect(output.dispose).not.toHaveBeenCalled()
     })
 
     it('should handle empty state gracefully', () => {

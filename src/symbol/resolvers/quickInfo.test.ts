@@ -3,14 +3,6 @@ import * as vscode from 'vscode'
 import { QuickInfoSymbolResolver } from './quickInfo'
 import { SymbolKind } from '../types'
 
-type ResolverInternals = {
-  output: vscode.OutputChannel
-}
-
-function internals(resolver: QuickInfoSymbolResolver) {
-  return resolver as unknown as ResolverInternals
-}
-
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
 }
@@ -45,7 +37,7 @@ describe('QuickInfoSymbolResolver', () => {
   let resolver: QuickInfoSymbolResolver
 
   beforeEach(() => {
-    resolver = new QuickInfoSymbolResolver(vscode.window.createOutputChannel('test'))
+    resolver = new QuickInfoSymbolResolver()
     vi.mocked(vscode.commands.executeCommand).mockReset()
   })
 
@@ -147,17 +139,5 @@ describe('QuickInfoSymbolResolver', () => {
     })
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
-  })
-
-  it('should log definition and kind to output channel', async () => {
-    mockQuickInfoResolution({
-      definitions: [createMockLocation('file:///def.ts', 5, 4, 10)],
-      quickinfo: { body: { kind: 'enum', kindModifiers: '', displayString: 'enum Direction' } },
-    })
-
-    await resolver.resolve(createMockDocument(), createMockPosition(3, 7))
-
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('[quickinfo] 3:7'))
-    expect(internals(resolver).output.appendLine).toHaveBeenCalledWith(expect.stringContaining('enum'))
   })
 })
