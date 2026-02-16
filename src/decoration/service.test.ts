@@ -528,17 +528,40 @@ describe('DecorationService', () => {
     })
 
     describe('progressive enhancement', () => {
-      it('should apply decorations after each phase', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+      it('should apply decorations progressively as phases complete', async () => {
+        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], importEndLine: 1 })
 
-        const editor = createMockEditor(["import { myFn } from 'mod'"])
-        await service.applyImportDecorations(editor)
+        // Plugin resolves myFn immediately, leaves MyClass unresolved
+        vi.spyOn(pluginResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
+          return pos.character === 9 ? SymbolKind.Function : undefined
+        })
 
-        // setDecorations should be called multiple times (once per phase that has results)
-        const calls = vi.mocked(editor.setDecorations).mock.calls
-        const decoratedCalls = calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
-        expect(decoratedCalls.length).toBeGreaterThanOrEqual(1)
+        // Block Hover with a deferred promise
+        let resolveHover!: (value: SymbolKind | undefined) => void
+        const hoverPromise = new Promise<SymbolKind | undefined>((resolve) => {
+          resolveHover = resolve
+        })
+        vi.spyOn(hoverResolver(service), 'resolve').mockImplementation(async () => hoverPromise)
+
+        const editor = createMockEditor(["import { myFn, MyClass } from 'mod'"])
+        const applyPromise = service.applyImportDecorations(editor)
+
+        // Flush microtasks to let Plugin phase complete and decorations to be applied
+        await vi.advanceTimersByTimeAsync(0)
+
+        // Plugin resolved myFn, decorations should already be applied before Hover completes
+        const callsBefore = vi.mocked(editor.setDecorations).mock.calls
+        const decoratedBefore = callsBefore.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(decoratedBefore.length).toBeGreaterThanOrEqual(1)
+
+        // Resolve Hover for MyClass and wait for all phases to complete
+        resolveHover(SymbolKind.Class)
+        await applyPromise
+
+        // After all phases, additional decoration updates should have been made
+        const callsAfter = vi.mocked(editor.setDecorations).mock.calls
+        const decoratedAfter = callsAfter.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(decoratedAfter.length).toBeGreaterThan(decoratedBefore.length)
       })
 
       it('should not call semanticToken for symbols already resolved by hover', async () => {

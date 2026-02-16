@@ -77,11 +77,19 @@ export class DecorationService implements vscode.Disposable {
       }
     }
 
+    // Precompute first occurrence of each symbol for O(1) lookup
+    const occurrenceBySymbol = new Map<string, SymbolOccurrence>()
+    for (const occurrence of occurrences) {
+      if (!occurrenceBySymbol.has(occurrence.symbol)) {
+        occurrenceBySymbol.set(occurrence.symbol, occurrence)
+      }
+    }
+
     // Resolve kind for each unique symbol, using cache when possible
     const importSectionText = text.split('\n').slice(0, importEndLine).join('\n')
     const cached = this.documentCaches.get(docUri)
     const symbolKinds = new Map<string, SymbolKind>()
-    const uniqueSymbols = [...new Set(occurrences.map((o) => o.symbol))]
+    const uniqueSymbols = [...occurrenceBySymbol.keys()]
 
     // Reuse cached kinds only if import section is unchanged
     const reusableCache = cached && cached.importSectionText === importSectionText ? cached.symbolKinds : null
@@ -109,11 +117,14 @@ export class DecorationService implements vscode.Disposable {
           continue
         }
 
-        const loading = await this.resolveSymbols(resolver, targets, occurrences, document, symbolKinds)
+        const previousSize = symbolKinds.size
+        const loading = await this.resolveSymbols(resolver, targets, occurrenceBySymbol, document, symbolKinds)
         if (loading) {
           tsServerLoading = true
         }
-        this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
+        if (symbolKinds.size !== previousSize) {
+          this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
+        }
       }
 
       this.documentCaches.set(docUri, { importSectionText, symbolKinds: new Map(symbolKinds) })
@@ -156,7 +167,7 @@ export class DecorationService implements vscode.Disposable {
   private async resolveSymbols(
     resolver: BaseSymbolResolver,
     symbols: string[],
-    occurrences: SymbolOccurrence[],
+    occurrenceBySymbol: Map<string, SymbolOccurrence>,
     document: vscode.TextDocument,
     symbolKinds: Map<string, SymbolKind>,
   ) {
@@ -165,7 +176,7 @@ export class DecorationService implements vscode.Disposable {
     await Promise.all(
       symbols.map(async (symbol) => {
         try {
-          const occurrence = occurrences.find((o) => o.symbol === symbol)
+          const occurrence = occurrenceBySymbol.get(symbol)
           if (!occurrence) {
             return
           }
