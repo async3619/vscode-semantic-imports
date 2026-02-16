@@ -19,6 +19,7 @@ const eslintConfig = defineConfig([
             'src/theme/*.test.ts',
             'src/tsPlugin/*.test.ts',
             'src/theme/utils/*.test.ts',
+            'src/utils/*.test.ts',
           ],
           maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 20,
         },
