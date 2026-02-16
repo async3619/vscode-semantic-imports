@@ -46,7 +46,7 @@ export class DecorationService implements vscode.Disposable {
     this.cancelRetry(docUri)
 
     const text = document.getText()
-    const { symbols, importEndLine } = parseImports(text)
+    const { symbols, symbolSources, importEndLine } = parseImports(text)
 
     // Clear all existing decorations
     for (const type of this.decorationTypes.values()) {
@@ -114,7 +114,14 @@ export class DecorationService implements vscode.Disposable {
         }
 
         const previousSize = symbolKinds.size
-        const loading = await this.resolveSymbols(resolver, targets, occurrenceBySymbol, document, symbolKinds)
+        const loading = await this.resolveSymbols(
+          resolver,
+          targets,
+          occurrenceBySymbol,
+          document,
+          symbolKinds,
+          symbolSources,
+        )
         if (loading) {
           tsServerLoading = true
         }
@@ -164,6 +171,7 @@ export class DecorationService implements vscode.Disposable {
     occurrenceBySymbol: Map<string, SymbolOccurrence>,
     document: vscode.TextDocument,
     symbolKinds: Map<string, SymbolKind>,
+    symbolSources: Record<string, string>,
   ) {
     let tsServerLoading = false
 
@@ -175,9 +183,12 @@ export class DecorationService implements vscode.Disposable {
             return
           }
 
+          const label = symbolSources[symbol] ? `${symbol} from '${symbolSources[symbol]}'` : symbol
+          this.logger.debug(`resolving ${label} via '${resolver.name}' resolver`)
           const kind = await resolver.resolve(document, occurrence.range.start)
           if (kind && !symbolKinds.has(symbol)) {
             symbolKinds.set(symbol, kind)
+            this.logger.info(`resolved ${label} → ${kind} via '${resolver.name}' resolver`)
           }
         } catch (error) {
           if (error instanceof TsServerLoadingError) {
