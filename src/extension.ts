@@ -25,41 +25,45 @@ class Extension implements vscode.Disposable {
     context.subscriptions.push(
       this,
       this.service,
-      vscode.window.onDidChangeActiveColorTheme(() => {
-        this.refreshColors()
-      }),
-      vscode.extensions.onDidChange(() => {
-        this.refreshColors()
-      }),
-      vscode.workspace.onDidChangeConfiguration((e) => {
-        if (
-          e.affectsConfiguration('editor.semanticTokenColorCustomizations') ||
-          e.affectsConfiguration('editor.tokenColorCustomizations')
-        ) {
-          this.refreshColors()
-        }
-      }),
-      vscode.window.onDidChangeActiveTextEditor((editor) => {
-        if (editor && isSupported(editor.document)) {
-          this.triggerDecoration(editor)
-        }
-      }),
-      vscode.workspace.onDidChangeTextDocument((e) => {
-        const editor = vscode.window.activeTextEditor
-        if (editor && editor.document === e.document && isSupported(e.document)) {
-          this.debouncedTriggerDecoration(editor)
-        }
-      }),
-      vscode.workspace.onDidCloseTextDocument((document) => {
-        if (isSupported(document)) {
-          this.service.clearDocumentCache(document.uri.toString())
-        }
-      }),
+      vscode.window.onDidChangeActiveColorTheme(() => this.refreshColors()),
+      vscode.extensions.onDidChange(() => this.refreshColors()),
+      vscode.workspace.onDidChangeConfiguration((e) => this.onDidChangeConfiguration(e)),
+      vscode.window.onDidChangeActiveTextEditor((editor) => this.onDidChangeActiveTextEditor(editor)),
+      vscode.workspace.onDidChangeTextDocument((e) => this.onDidChangeTextDocument(e)),
+      vscode.workspace.onDidCloseTextDocument((document) => this.onDidCloseTextDocument(document)),
     )
   }
 
   dispose() {
     this.debouncedTriggerDecoration.cancel()
+  }
+
+  private onDidChangeConfiguration(e: vscode.ConfigurationChangeEvent) {
+    if (
+      e.affectsConfiguration('editor.semanticTokenColorCustomizations') ||
+      e.affectsConfiguration('editor.tokenColorCustomizations')
+    ) {
+      this.refreshColors()
+    }
+  }
+
+  private onDidChangeActiveTextEditor(editor: vscode.TextEditor | undefined) {
+    if (editor && isSupported(editor.document)) {
+      this.triggerDecoration(editor)
+    }
+  }
+
+  private onDidChangeTextDocument(e: vscode.TextDocumentChangeEvent) {
+    const editor = vscode.window.activeTextEditor
+    if (editor && editor.document === e.document && isSupported(e.document)) {
+      this.debouncedTriggerDecoration(editor)
+    }
+  }
+
+  private onDidCloseTextDocument(document: vscode.TextDocument) {
+    if (isSupported(document)) {
+      this.service.clearDocumentCache(document.uri.toString())
+    }
   }
 
   private triggerDecoration(editor: vscode.TextEditor) {
