@@ -198,6 +198,38 @@ describe('DecorationService', () => {
         expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
       })
 
+      it('should limit concurrent resolve calls', async () => {
+        vi.useRealTimers()
+
+        const symbolCount = 10
+        const symbols = Array.from({ length: symbolCount }, (_, i) => `sym${i}`)
+        const importLine = `import { ${symbols.join(', ')} } from 'mod'`
+
+        vi.mocked(parseImports).mockReturnValue({
+          symbols,
+          symbolSources: {},
+          importEndLine: 1,
+        })
+
+        let concurrent = 0
+        let maxConcurrent = 0
+        vi.spyOn(pluginResolver(service), 'resolve').mockImplementation(async () => {
+          concurrent++
+          maxConcurrent = Math.max(maxConcurrent, concurrent)
+          await new Promise((r) => setTimeout(r, 10))
+          concurrent--
+          return SymbolKind.Function
+        })
+
+        const editor = createMockEditor([importLine])
+        await service.applyImportDecorations(editor)
+
+        expect(maxConcurrent).toBeLessThanOrEqual(5)
+        expect(maxConcurrent).toBeGreaterThan(1)
+
+        vi.useFakeTimers()
+      })
+
       it('should skip decoration when resolver throws', async () => {
         vi.mocked(parseImports).mockReturnValue({ symbols: ['failing'], symbolSources: {}, importEndLine: 1 })
         vi.spyOn(pluginResolver(service), 'resolve').mockRejectedValue(new Error('resolution failed'))
