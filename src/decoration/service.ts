@@ -1,22 +1,20 @@
 import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
-import {
-  HoverSymbolResolver,
-  PluginSymbolResolver,
-  SemanticTokenSymbolResolver,
-  QuickInfoSymbolResolver,
-  TsServerLoadingError,
-} from '../symbol'
+import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver, TsServerLoadingError } from '../symbol'
 import type { SymbolColorMap } from '../theme'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
 const MAX_RETRIES = 5
 const RETRY_DELAY_MS = 500
 
+interface ResolverPhase {
+  resolver: BaseSymbolResolver
+}
+
 export class DecorationService implements vscode.Disposable {
   private readonly output: vscode.OutputChannel
-  private readonly resolvers: BaseSymbolResolver[]
+  private readonly phases: ResolverPhase[]
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
   private readonly retryTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
@@ -25,11 +23,10 @@ export class DecorationService implements vscode.Disposable {
   constructor(colors: SymbolColorMap = {}, output: vscode.OutputChannel) {
     this.output = output
     this.colors = colors
-    this.resolvers = [
-      new PluginSymbolResolver(this.output),
-      new HoverSymbolResolver(this.output),
-      new SemanticTokenSymbolResolver(this.output),
-      new QuickInfoSymbolResolver(this.output),
+    this.phases = [
+      { resolver: new PluginSymbolResolver(this.output) },
+      { resolver: new HoverSymbolResolver(this.output) },
+      { resolver: new SemanticTokenSymbolResolver(this.output) },
     ]
   }
 
@@ -80,11 +77,19 @@ export class DecorationService implements vscode.Disposable {
       }
     }
 
+    // Precompute first occurrence of each symbol for O(1) lookup
+    const occurrenceBySymbol = new Map<string, SymbolOccurrence>()
+    for (const occurrence of occurrences) {
+      if (!occurrenceBySymbol.has(occurrence.symbol)) {
+        occurrenceBySymbol.set(occurrence.symbol, occurrence)
+      }
+    }
+
     // Resolve kind for each unique symbol, using cache when possible
     const importSectionText = text.split('\n').slice(0, importEndLine).join('\n')
     const cached = this.documentCaches.get(docUri)
     const symbolKinds = new Map<string, SymbolKind>()
-    const uniqueSymbols = [...new Set(occurrences.map((o) => o.symbol))]
+    const uniqueSymbols = [...occurrenceBySymbol.keys()]
 
     // Reuse cached kinds only if import section is unchanged
     const reusableCache = cached && cached.importSectionText === importSectionText ? cached.symbolKinds : null
@@ -106,53 +111,26 @@ export class DecorationService implements vscode.Disposable {
         `[cache] resolving ${symbolsToResolve.length}/${uniqueSymbols.length} symbols for ${docUri}`,
       )
 
-      await Promise.all(
-        symbolsToResolve.map(async (symbol) => {
-          try {
-            const occurrence = occurrences.find((o) => o.symbol === symbol)
-            if (!occurrence) {
-              return
-            }
-            const pos = occurrence.range.start
+      for (const { resolver } of this.phases) {
+        const targets = symbolsToResolve.filter((s) => !symbolKinds.has(s))
+        if (targets.length === 0) {
+          continue
+        }
 
-            for (const resolver of this.resolvers) {
-              const kind = await resolver.resolve(document, pos)
-              if (kind) {
-                this.output.appendLine(`[result] \`${symbol}\` -> \`${kind}\` (${resolver.name})`)
-                symbolKinds.set(symbol, kind)
-                break
-              }
-            }
-          } catch (error) {
-            if (error instanceof TsServerLoadingError) {
-              tsServerLoading = true
-            }
-          }
-        }),
-      )
+        const previousSize = symbolKinds.size
+        const loading = await this.resolveSymbols(resolver, targets, occurrenceBySymbol, document, symbolKinds)
+        if (loading) {
+          tsServerLoading = true
+        }
+        if (symbolKinds.size !== previousSize) {
+          this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
+        }
+      }
 
       this.documentCaches.set(docUri, { importSectionText, symbolKinds: new Map(symbolKinds) })
     } else {
       this.output.appendLine(`[cache] full hit for ${docUri}`)
-    }
-
-    // Group ranges by color
-    const rangesByColor = new Map<string, vscode.Range[]>()
-
-    for (const { symbol, range } of occurrences) {
-      const kind = symbolKinds.get(symbol)
-      const color = kind ? this.colors[kind] : undefined
-      if (!color) {
-        continue
-      }
-      const ranges = rangesByColor.get(color) ?? []
-      ranges.push(range)
-      rangesByColor.set(color, ranges)
-    }
-
-    // Apply decorations (partial results applied immediately)
-    for (const [color, ranges] of rangesByColor) {
-      editor.setDecorations(this.getDecorationType(color), ranges)
+      this.applyDecorationsToEditor(editor, occurrences, symbolKinds)
     }
 
     // Schedule retry if tsserver was loading and retries remain
@@ -184,6 +162,69 @@ export class DecorationService implements vscode.Disposable {
     }
     this.decorationTypes.clear()
     this.documentCaches.clear()
+  }
+
+  private async resolveSymbols(
+    resolver: BaseSymbolResolver,
+    symbols: string[],
+    occurrenceBySymbol: Map<string, SymbolOccurrence>,
+    document: vscode.TextDocument,
+    symbolKinds: Map<string, SymbolKind>,
+  ) {
+    let tsServerLoading = false
+
+    await Promise.all(
+      symbols.map(async (symbol) => {
+        try {
+          const occurrence = occurrenceBySymbol.get(symbol)
+          if (!occurrence) {
+            return
+          }
+
+          const kind = await resolver.resolve(document, occurrence.range.start)
+          if (kind && !symbolKinds.has(symbol)) {
+            this.output.appendLine(`[result] \`${symbol}\` -> \`${kind}\` (${resolver.name})`)
+            symbolKinds.set(symbol, kind)
+          }
+        } catch (error) {
+          if (error instanceof TsServerLoadingError) {
+            tsServerLoading = true
+          }
+        }
+      }),
+    )
+
+    return tsServerLoading
+  }
+
+  private applyDecorationsToEditor(
+    editor: vscode.TextEditor,
+    occurrences: SymbolOccurrence[],
+    symbolKinds: Map<string, SymbolKind>,
+  ) {
+    const rangesByColor = new Map<string, vscode.Range[]>()
+
+    for (const { symbol, range } of occurrences) {
+      const kind = symbolKinds.get(symbol)
+      const color = kind ? this.colors[kind] : undefined
+      if (!color) {
+        continue
+      }
+      const ranges = rangesByColor.get(color) ?? []
+      ranges.push(range)
+      rangesByColor.set(color, ranges)
+    }
+
+    // Clear decorations for colors no longer in use, then apply current
+    for (const [color, type] of this.decorationTypes) {
+      if (!rangesByColor.has(color)) {
+        editor.setDecorations(type, [])
+      }
+    }
+
+    for (const [color, ranges] of rangesByColor) {
+      editor.setDecorations(this.getDecorationType(color), ranges)
+    }
   }
 
   private cancelRetry(docUri: string) {
