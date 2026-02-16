@@ -39,8 +39,13 @@ export class TypeScriptServerProbe {
 
       this.logger.warn(`tsserver not ready after ${MAX_PROBE_ATTEMPTS} attempts`)
       return false
-    } catch {
-      this.logger.info('probe cancelled')
+    } catch (error) {
+      if (signal.aborted) {
+        this.logger.info('probe cancelled')
+      } else {
+        const message = error instanceof Error ? error.message : String(error)
+        this.logger.warn('probe failed:', message)
+      }
       return false
     }
   }
@@ -91,15 +96,17 @@ export class TypeScriptServerProbe {
 
   private delay(ms: number, signal: AbortSignal) {
     return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, ms)
-      signal.addEventListener(
-        'abort',
-        () => {
-          clearTimeout(timer)
-          reject(signal.reason)
-        },
-        { once: true },
-      )
+      const onAbort = () => {
+        clearTimeout(timer)
+        reject(signal.reason)
+      }
+
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort)
+        resolve()
+      }, ms)
+
+      signal.addEventListener('abort', onAbort, { once: true })
     })
   }
 }

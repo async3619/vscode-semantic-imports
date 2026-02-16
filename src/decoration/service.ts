@@ -123,13 +123,15 @@ export class DecorationService implements vscode.Disposable {
         this.probeControllers.set(docUri, controller)
 
         const ready = await this.probe.waitForReady(document, probeTarget.range.start, controller.signal)
-        this.probeControllers.delete(docUri)
+        if (this.probeControllers.get(docUri) === controller) {
+          this.probeControllers.delete(docUri)
+        }
 
         if (controller.signal.aborted) {
           return
         }
         if (!ready) {
-          this.logger.warn('tsserver probe timed out, proceeding with resolve pipeline')
+          this.logger.warn('tsserver probe not ready, proceeding with resolve pipeline')
         }
       }
 
