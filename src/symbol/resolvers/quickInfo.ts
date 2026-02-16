@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { Logger } from '../../logger'
 import { BaseSymbolResolver } from '../types'
 import { toSymbolKind } from '../utils/toSymbolKind'
 
@@ -11,6 +12,7 @@ interface QuickInfoResponse {
 }
 
 export class QuickInfoSymbolResolver extends BaseSymbolResolver {
+  private readonly logger = Logger.create(QuickInfoSymbolResolver)
   readonly name = 'quickInfo'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {

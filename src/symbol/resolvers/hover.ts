@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { Logger } from '../../logger'
 import { TsServerLoadingError } from '../errors'
 import { SymbolKind, BaseSymbolResolver } from '../types'
 import { extractContentText } from '../utils/extractContentText'
@@ -10,6 +11,7 @@ const VARIABLE_KEYWORDS = new Set(['const', 'let', 'var'])
 const TYPE_EXTRACT_PATTERN = /\(alias\)\s+(?:const|let|var)\s+\S+\s*:\s*(.+)/
 
 export class HoverSymbolResolver extends BaseSymbolResolver {
+  private readonly logger = Logger.create(HoverSymbolResolver)
   readonly name = 'hover'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {

@@ -93,6 +93,51 @@ describe('Logger', () => {
     })
   })
 
+  describe('args formatting', () => {
+    it('should serialize plain objects as JSON', () => {
+      const logger = Logger.create(TestClass)
+      logger.info('data', { key: 'value', count: 42 })
+
+      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('data {"key":"value","count":42}'))
+    })
+
+    it('should display class instances as ClassName {}', () => {
+      const logger = Logger.create(TestClass)
+      logger.info('received', new ServiceA())
+
+      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('received ServiceA {}'))
+    })
+
+    it('should serialize arrays as JSON', () => {
+      const logger = Logger.create(TestClass)
+      logger.info('items', [1, 2, 3])
+
+      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('items [1,2,3]'))
+    })
+
+    it('should convert primitives with String()', () => {
+      const logger = Logger.create(TestClass)
+      logger.info('values', 42, true, 'text')
+
+      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('values 42 true text'))
+    })
+
+    it('should handle null and undefined', () => {
+      const logger = Logger.create(TestClass)
+      logger.info('empty', null, undefined)
+
+      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('empty null undefined'))
+    })
+
+    it('should use error stack for Error instances', () => {
+      const logger = Logger.create(TestClass)
+      const error = new Error('boom')
+      logger.error('failed', error)
+
+      expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('failed Error: boom'))
+    })
+  })
+
   describe('output channel', () => {
     it('should create output channel lazily on first log call', () => {
       Logger.create(TestClass)

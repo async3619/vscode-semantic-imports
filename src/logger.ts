@@ -13,6 +13,22 @@ function formatTimestamp(date: Date) {
   return `${y}-${mo}-${d} ${h}:${mi}:${s}.${ms}`
 }
 
+function formatArg(arg: unknown) {
+  if (arg === null || arg === undefined) {
+    return String(arg)
+  }
+  if (arg instanceof Error) {
+    return arg.stack ?? arg.message
+  }
+  if (typeof arg === 'object') {
+    if (Array.isArray(arg) || arg.constructor === Object || !arg.constructor) {
+      return JSON.stringify(arg)
+    }
+    return `${arg.constructor.name} {}`
+  }
+  return String(arg)
+}
+
 export class Logger {
   private static output: vscode.OutputChannel | undefined
 
@@ -33,25 +49,25 @@ export class Logger {
 
   private constructor(private readonly tag: string) {}
 
-  info(message: string) {
-    this.log('INFO', message)
+  info(...args: unknown[]) {
+    this.log('INFO', args)
   }
 
-  warn(message: string) {
-    this.log('WARN', message)
+  warn(...args: unknown[]) {
+    this.log('WARN', args)
   }
 
-  error(message: string) {
-    this.log('ERROR', message)
+  error(...args: unknown[]) {
+    this.log('ERROR', args)
   }
 
-  debug(message: string) {
-    this.log('DEBUG', message)
+  debug(...args: unknown[]) {
+    this.log('DEBUG', args)
   }
 
-  private log(severity: Severity, message: string) {
+  private log(severity: Severity, args: unknown[]) {
     const output = Logger.ensureOutput()
     const timestamp = formatTimestamp(new Date())
-    output.appendLine(`[${timestamp}][${this.tag}][${severity}] ${message}`)
+    output.appendLine(`[${timestamp}][${this.tag}][${severity}] ${args.map(formatArg).join(' ')}`)
   }
 }

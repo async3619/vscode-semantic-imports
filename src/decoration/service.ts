@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import { parseImports } from '../importParser'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver, TsServerLoadingError } from '../symbol'
+import { Logger } from '../logger'
 import type { SymbolColorMap } from '../theme'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
@@ -13,6 +14,7 @@ interface ResolverPhase {
 }
 
 export class DecorationService implements vscode.Disposable {
+  private readonly logger = Logger.create(DecorationService)
   private readonly phases: ResolverPhase[]
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()

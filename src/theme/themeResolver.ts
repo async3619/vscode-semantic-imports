@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { Logger } from '../logger'
 import type { SymbolColorMap } from './types'
 import { parseThemeFile } from './utils/parseThemeFile'
 import { extractSymbolColors } from './utils/extractSymbolColors'
@@ -18,6 +19,8 @@ interface DiscoveredTheme {
 }
 
 export class ThemeColorResolver {
+  private readonly logger = Logger.create(ThemeColorResolver)
+
   async loadColors(): Promise<SymbolColorMap> {
     const theme = this.discoverActiveTheme()
     if (!theme) {

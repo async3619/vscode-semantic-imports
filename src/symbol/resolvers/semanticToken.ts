@@ -1,9 +1,11 @@
 import * as vscode from 'vscode'
+import { Logger } from '../../logger'
 import { BaseSymbolResolver } from '../types'
 import { findTokenTypeAtPosition } from '../utils/findTokenTypeAtPosition'
 import { toSymbolKind } from '../utils/toSymbolKind'
 
 export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
+  private readonly logger = Logger.create(SemanticTokenSymbolResolver)
   readonly name = 'semanticToken'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {

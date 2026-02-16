@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { Logger } from '../../logger'
 import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
 import { SymbolKind, BaseSymbolResolver } from '../types'
 
@@ -7,6 +8,7 @@ interface CompletionInfoResponse {
 }
 
 export class PluginSymbolResolver extends BaseSymbolResolver {
+  private readonly logger = Logger.create(PluginSymbolResolver)
   readonly name = 'plugin'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
