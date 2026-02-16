@@ -23,7 +23,7 @@ const eslintConfig = defineConfig([
             'src/utils/*.test.ts',
             'src/parser/*.test.ts',
           ],
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 20,
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 25,
         },
       },
     },

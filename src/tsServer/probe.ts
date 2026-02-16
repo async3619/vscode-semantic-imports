@@ -1,7 +1,7 @@
 import * as vscode from 'vscode'
 import { Logger } from '../logger'
 
-const MAX_PROBE_ATTEMPTS = 20
+const DEFAULT_TIMEOUT_MS = 10_000
 const PROBE_INTERVAL_MS = 500
 
 interface QuickInfoResponse {
@@ -10,10 +10,24 @@ interface QuickInfoResponse {
   }
 }
 
-export class TypeScriptServerProbe {
-  private readonly logger = Logger.create(TypeScriptServerProbe)
+export interface ProbeOptions {
+  timeout?: number
+}
 
-  async waitForReady(document: vscode.TextDocument, position: vscode.Position, signal: AbortSignal) {
+export class TypeScriptServerProbe implements vscode.Disposable {
+  private readonly logger = Logger.create(TypeScriptServerProbe)
+  private readonly controllers = new Map<string, AbortController>()
+
+  async waitForReady(key: string, document: vscode.TextDocument, position: vscode.Position, options?: ProbeOptions) {
+    this.cancel(key)
+
+    const controller = new AbortController()
+    this.controllers.set(key, controller)
+    const signal = controller.signal
+
+    const timeout = options?.timeout ?? DEFAULT_TIMEOUT_MS
+    const maxAttempts = Math.max(1, Math.ceil(timeout / PROBE_INTERVAL_MS))
+
     try {
       signal.throwIfAborted()
 
@@ -24,7 +38,7 @@ export class TypeScriptServerProbe {
 
       this.logger.info('tsserver not ready, starting probe polling')
 
-      for (let attempt = 1; attempt < MAX_PROBE_ATTEMPTS; attempt++) {
+      for (let attempt = 1; attempt < maxAttempts; attempt++) {
         await this.delay(PROBE_INTERVAL_MS, signal)
 
         const ready = await this.check(document, position)
@@ -34,20 +48,39 @@ export class TypeScriptServerProbe {
           return true
         }
 
-        this.logger.debug(`probe attempt ${attempt + 1}/${MAX_PROBE_ATTEMPTS}: not ready`)
+        this.logger.debug(`probe attempt ${attempt + 1}/${maxAttempts}: not ready`)
       }
 
-      this.logger.warn(`tsserver not ready after ${MAX_PROBE_ATTEMPTS} attempts`)
-      return false
+      this.logger.warn(`tsserver not ready after ${maxAttempts} attempts, proceeding anyway`)
+      return true
     } catch (error) {
       if (signal.aborted) {
         this.logger.info('probe cancelled')
-      } else {
-        const message = error instanceof Error ? error.message : String(error)
-        this.logger.warn('probe failed:', message)
+        return false
       }
-      return false
+      const message = error instanceof Error ? error.message : String(error)
+      this.logger.warn('probe failed:', message)
+      return true
+    } finally {
+      if (this.controllers.get(key) === controller) {
+        this.controllers.delete(key)
+      }
     }
+  }
+
+  cancel(key: string) {
+    const existing = this.controllers.get(key)
+    if (existing) {
+      existing.abort()
+      this.controllers.delete(key)
+    }
+  }
+
+  dispose() {
+    for (const controller of this.controllers.values()) {
+      controller.abort()
+    }
+    this.controllers.clear()
   }
 
   private async check(document: vscode.TextDocument, position: vscode.Position) {
