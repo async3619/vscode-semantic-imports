@@ -7,7 +7,7 @@ import type { DocumentCache } from './types'
 import { SymbolKind, TypeScriptServerNotLoadedError } from '@/symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '@/symbol'
 import type { SymbolColorMap } from '@/theme'
-import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/tsServer'
+import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/typescript/language'
 import type { ImportStatement } from '@/parser'
 import { TypeScriptParser } from '@/parser'
 

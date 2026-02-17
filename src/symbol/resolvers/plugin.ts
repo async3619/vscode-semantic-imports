@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import { RESPONSE_KEY, type PluginResponse } from '@/tsPlugin/protocol'
+import { RESPONSE_KEY, type PluginResponse } from '@/typescript/plugin/protocol'
 import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
 import { SymbolKind, BaseSymbolResolver } from '@/symbol/types'
 

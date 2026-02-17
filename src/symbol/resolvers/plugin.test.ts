@@ -3,8 +3,8 @@ import * as vscode from 'vscode'
 import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
 import { PluginSymbolResolver } from './plugin'
 import { SymbolKind } from '@/symbol/types'
-import { RESPONSE_KEY, type PluginResponse, type ResolveResponse } from '@/tsPlugin/protocol'
-import type { TypeScriptLanguageService, DefinitionResult } from '@/tsServer'
+import { RESPONSE_KEY, type PluginResponse, type ResolveResponse } from '@/typescript/plugin/protocol'
+import type { TypeScriptLanguageService, DefinitionResult } from '@/typescript/language'
 
 const ALL_FALSE: Omit<ResolveResponse, 'id'> = {
   isFunction: false,
