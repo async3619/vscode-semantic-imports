@@ -750,6 +750,36 @@ describe('DecorationService', () => {
           .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
         expect(applyCalls).toHaveLength(0)
       })
+
+      it('should clean up active resolver after successful applyImportDecorations', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        let resolvePlugin!: (value: SymbolKind | undefined) => void
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolvePlugin = resolve
+            }),
+        )
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        const docUri = editor.document.uri.toString()
+
+        expect(internals(service).activeResolvers.has(docUri)).toBe(false)
+
+        const applyPromise = service.applyImportDecorations(editor)
+        await new Promise((r) => setTimeout(r, 10))
+        expect(internals(service).activeResolvers.has(docUri)).toBe(true)
+
+        resolvePlugin(SymbolKind.Function)
+        await applyPromise
+
+        expect(internals(service).activeResolvers.has(docUri)).toBe(false)
+      })
     })
 
     describe('progressive enhancement', () => {
