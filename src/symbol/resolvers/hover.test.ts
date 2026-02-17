@@ -4,7 +4,7 @@ import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
 import { HoverSymbolResolver } from './hover'
 import { SymbolKind } from '@/symbol/types'
 import { loadTypeScript } from '@/symbol/utils/loadTypeScript'
-import type { TypeScriptLanguageService } from '@/typescript/server'
+import type { TypeScriptLanguageService } from '@/typescript/language'
 
 vi.mock('@/symbol/utils/loadTypeScript', () => ({
   // eslint-disable-next-line @typescript-eslint/no-require-imports

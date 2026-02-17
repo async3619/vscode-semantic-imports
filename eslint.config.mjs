@@ -18,7 +18,7 @@ const eslintConfig = defineConfig([
             'src/symbol/resolvers/*.test.ts',
             'src/theme/*.test.ts',
             'src/typescript/plugin/*.test.ts',
-            'src/typescript/server/*.test.ts',
+            'src/typescript/language/*.test.ts',
             'src/theme/utils/*.test.ts',
             'src/utils/*.test.ts',
             'src/parser/*.test.ts',

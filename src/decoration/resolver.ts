@@ -1,7 +1,7 @@
 import PQueue from 'p-queue'
 import * as vscode from 'vscode'
 import { Logger } from '@/logger'
-import type { TypeScriptLanguageService } from '@/typescript/server'
+import type { TypeScriptLanguageService } from '@/typescript/language'
 import { stopwatch } from '@/utils/stopwatch'
 import { withRetry } from '@/utils/retry'
 import type { BaseSymbolResolver, SymbolKind } from '@/symbol'
