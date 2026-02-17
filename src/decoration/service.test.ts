@@ -1,28 +1,47 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { DecorationService } from './service'
+import type { SymbolResolverFactory } from './service'
+import { SymbolResolver } from './resolver'
 import type { DocumentCache } from './types'
-import type { BaseSymbolResolver } from '../symbol'
-import { SymbolKind, TsServerLoadingError } from '../symbol'
-import type { SymbolColorMap } from '../theme'
-
-vi.mock('../importParser', () => ({
-  parseImports: vi.fn(),
-}))
-
-import { parseImports } from '../importParser'
+import { SymbolKind, TypeScriptServerNotLoadedError } from '@/symbol'
+import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '@/symbol'
+import type { SymbolColorMap } from '@/theme'
+import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/typescript/language'
+import type { ImportStatement } from '@/parser'
+import { TypeScriptParser } from '@/parser'
 
 type ServiceInternals = {
-  phases: { resolver: BaseSymbolResolver }[]
+  languageService: TypeScriptLanguageService
+  probe: TypeScriptServerProbe
+  parser: TypeScriptParser
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
   documentCaches: Map<string, DocumentCache>
-  retryTimeouts: Map<string, ReturnType<typeof setTimeout>>
+  activeResolvers: Map<string, SymbolResolver>
   colors: SymbolColorMap
   getDecorationType: (color: string) => vscode.TextEditorDecorationType
 }
 
 function internals(service: DecorationService) {
   return service as unknown as ServiceInternals
+}
+
+function stmt(overrides: Partial<ImportStatement> & Pick<ImportStatement, 'localName'>): ImportStatement {
+  return {
+    importedName: overrides.localName,
+    source: 'mod',
+    kind: 'named',
+    isTypeOnly: false,
+    startLine: 0,
+    startColumn: 0,
+    endLine: 0,
+    endColumn: 0,
+    ...overrides,
+  }
+}
+
+function mockParserReturn(service: DecorationService, statements: ImportStatement[]) {
+  vi.spyOn(internals(service).parser, 'parseImports').mockReturnValue(statements)
 }
 
 const TEST_COLORS: SymbolColorMap = {
@@ -40,47 +59,57 @@ function createMockEditor(lines: string[]) {
   return {
     document: {
       getText: () => text,
-      lineAt: (index: number) => ({ text: lines[index] ?? '' }),
       uri: vscode.Uri.parse('file:///test.ts'),
     },
     setDecorations: vi.fn(),
   } as unknown as vscode.TextEditor
 }
 
-function pluginResolver(service: DecorationService) {
-  return internals(service).phases[0].resolver
+function createService(colors: SymbolColorMap = TEST_COLORS) {
+  const languageService = new TypeScriptLanguageService()
+  const probe = new TypeScriptServerProbe(languageService)
+  const parser = new TypeScriptParser()
+  const factory: SymbolResolverFactory = (doc, targets, ls) => new SymbolResolver(doc, targets, ls)
+  const service = new DecorationService(languageService, probe, parser, factory)
+  service.setColors(colors)
+  return { service, languageService, probe, parser }
 }
 
-function hoverResolver(service: DecorationService) {
-  return internals(service).phases[1].resolver
+function mockProbe(probe: TypeScriptServerProbe) {
+  vi.spyOn(probe, 'waitForReady').mockResolvedValue(true)
+  vi.spyOn(probe, 'cancel')
+  vi.spyOn(probe, 'dispose')
+  return probe
 }
 
-function semanticTokenResolver(service: DecorationService) {
-  return internals(service).phases[2].resolver
+type ResolveMethod = (document: vscode.TextDocument, position: vscode.Position) => Promise<SymbolKind | undefined>
+
+function spyResolve(prototype: { resolve: ResolveMethod }) {
+  return vi.spyOn(prototype as { resolve: ResolveMethod }, 'resolve')
 }
 
-function stubAllResolvers(service: DecorationService) {
-  for (const { resolver } of internals(service).phases) {
-    vi.spyOn(resolver, 'resolve').mockResolvedValue(undefined)
-  }
+function stubAllResolvers() {
+  spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(undefined)
+  spyResolve(HoverSymbolResolver.prototype).mockResolvedValue(undefined)
+  spyResolve(SemanticTokenSymbolResolver.prototype).mockResolvedValue(undefined)
 }
 
 describe('DecorationService', () => {
   let service: DecorationService
+  let probe: TypeScriptServerProbe
 
   beforeEach(() => {
     vi.useFakeTimers()
-    service = new DecorationService(TEST_COLORS)
-    vi.mocked(parseImports).mockReset()
-    vi.mocked(vscode.commands.executeCommand).mockReset()
+    const created = createService()
+    service = created.service
+    probe = mockProbe(created.probe)
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
 
-    // Explicitly stub all resolver methods to undefined by default.
-    // Tests that need a specific resolver to return a value will override the relevant spy.
-    stubAllResolvers(service)
+    stubAllResolvers()
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
@@ -91,7 +120,7 @@ describe('DecorationService', () => {
         const existingType = { key: 'existing', dispose: disposeFn } as unknown as vscode.TextEditorDecorationType
         internals(service).decorationTypes.set('#ff0000', existingType)
 
-        vi.mocked(parseImports).mockReturnValue({ symbols: [], symbolSources: {}, importEndLine: 0 })
+        mockParserReturn(service, [])
 
         const editor = createMockEditor([])
         await service.applyImportDecorations(editor)
@@ -100,17 +129,19 @@ describe('DecorationService', () => {
       })
 
       it('should return early if no symbols are found', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: [], symbolSources: {}, importEndLine: 0 })
+        mockParserReturn(service, [])
 
         const editor = createMockEditor([])
         await service.applyImportDecorations(editor)
 
-        expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
+        expect(probe.waitForReady).not.toHaveBeenCalled()
       })
 
       it('should find symbol occurrences and apply decorations', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -122,65 +153,31 @@ describe('DecorationService', () => {
       })
     })
 
-    describe('symbol occurrence regex', () => {
-      it('should exclude the module specifier part after from', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['react', 'useState'], symbolSources: {}, importEndLine: 1 })
-        const spy = vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+    describe('symbol occurrences', () => {
+      it('should decorate multiple symbols with the same color', async () => {
+        mockParserReturn(service, [
+          stmt({ localName: 'Foo', source: 'a', startLine: 0, startColumn: 9, endLine: 0, endColumn: 12 }),
+          stmt({ localName: 'Bar', source: 'b', startLine: 1, startColumn: 9, endLine: 1, endColumn: 12 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Class)
 
-        const editor = createMockEditor(["import { useState } from 'react'"])
+        const editor = createMockEditor(["import { Foo } from 'a'", "import { Bar } from 'b'"])
         await service.applyImportDecorations(editor)
 
-        // Only 'useState' should be found as occurrence (react is after `from`)
-        expect(spy).toHaveBeenCalledTimes(1)
-      })
-
-      it('should escape special regex characters in symbol names without throwing', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['$special'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Variable)
-
-        const editor = createMockEditor(["import { $special } from 'mod'"])
-
-        // Should not throw a regex syntax error due to unescaped $
-        await expect(service.applyImportDecorations(editor)).resolves.toBeUndefined()
-      })
-
-      it('should find same symbol on multiple lines', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['Foo'], symbolSources: {}, importEndLine: 2 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Class)
-
-        const editor = createMockEditor(["import { Foo } from 'a'", "import { Foo } from 'b'"])
-        await service.applyImportDecorations(editor)
-
-        // Should find Foo on both lines
         const setDecorationsCalls = vi.mocked(editor.setDecorations).mock.calls
         const decorationCall = setDecorationsCalls.find((call) => Array.isArray(call[1]) && call[1].length > 0)
         expect(decorationCall).toBeDefined()
         expect(decorationCall![1]).toHaveLength(2)
       })
-
-      it('should use word boundary matching', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['use'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
-
-        const editor = createMockEditor(["import { use, useState } from 'react'"])
-        await service.applyImportDecorations(editor)
-
-        // Only 'use' should match, not 'use' within 'useState'
-        const setDecorationsCalls = vi.mocked(editor.setDecorations).mock.calls
-        const decorationCall = setDecorationsCalls.find((call) => Array.isArray(call[1]) && call[1].length > 0)
-        expect(decorationCall).toBeDefined()
-        expect(decorationCall![1]).toHaveLength(1)
-      })
     })
 
     describe('symbol kind resolution', () => {
       it('should call resolve for each unique symbol', async () => {
-        vi.mocked(parseImports).mockReturnValue({
-          symbols: ['useState', 'useEffect'],
-          symbolSources: {},
-          importEndLine: 1,
-        })
-        const spy = vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+          stmt({ localName: 'useEffect', source: 'react', startLine: 0, startColumn: 19, endLine: 0, endColumn: 28 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useState, useEffect } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -189,64 +186,133 @@ describe('DecorationService', () => {
       })
 
       it('should skip decoration when all resolvers return undefined', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['unknown'], symbolSources: {}, importEndLine: 1 })
+        mockParserReturn(service, [
+          stmt({ localName: 'unknown', startLine: 0, startColumn: 9, endLine: 0, endColumn: 16 }),
+        ])
 
         const editor = createMockEditor(["import { unknown } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        // No decoration type should be created for unresolved symbols
         expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
       })
 
+      it('should limit concurrent resolve calls', async () => {
+        vi.useRealTimers()
+
+        const symbolCount = 10
+        const symbols = Array.from({ length: symbolCount }, (_, i) => `sym${i}`)
+        const importLine = `import { ${symbols.join(', ')} } from 'mod'`
+
+        let col = 9
+        const statements = symbols.map((name) => {
+          const s = stmt({ localName: name, startLine: 0, startColumn: col, endLine: 0, endColumn: col + name.length })
+          col += name.length + 2
+          return s
+        })
+        mockParserReturn(service, statements)
+
+        let concurrent = 0
+        let maxConcurrent = 0
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async () => {
+          concurrent++
+          maxConcurrent = Math.max(maxConcurrent, concurrent)
+          await new Promise((r) => setTimeout(r, 10))
+          concurrent--
+          return SymbolKind.Function
+        })
+
+        const editor = createMockEditor([importLine])
+        await service.applyImportDecorations(editor)
+
+        expect(maxConcurrent).toBeLessThanOrEqual(5)
+        expect(maxConcurrent).toBeGreaterThan(1)
+      })
+
       it('should skip decoration when resolver throws', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['failing'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockRejectedValue(new Error('resolution failed'))
+        mockParserReturn(service, [
+          stmt({ localName: 'failing', startLine: 0, startColumn: 9, endLine: 0, endColumn: 16 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockRejectedValue(new Error('resolution failed'))
 
         const editor = createMockEditor(["import { failing } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        // Should not throw, and should not apply any decoration
+        expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
+      })
+
+      it('should retry symbols that fail with TypeScriptServerNotLoadedError', async () => {
+        mockParserReturn(service, [
+          stmt({ localName: 'clsx', source: 'clsx', startLine: 0, startColumn: 7, endLine: 0, endColumn: 11 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype)
+          .mockRejectedValueOnce(new TypeScriptServerNotLoadedError())
+          .mockResolvedValueOnce(SymbolKind.Function)
+
+        const editor = createMockEditor(["import clsx from 'clsx'"])
+        const promise = service.applyImportDecorations(editor)
+        await vi.advanceTimersByTimeAsync(500)
+        await promise
+
+        expect(spy).toHaveBeenCalledTimes(2)
+        expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
+          color: TEST_COLORS[SymbolKind.Function],
+        })
+      })
+
+      it('should give up retrying after max retry attempts', async () => {
+        mockParserReturn(service, [
+          stmt({ localName: 'clsx', source: 'clsx', startLine: 0, startColumn: 7, endLine: 0, endColumn: 11 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype).mockRejectedValue(new TypeScriptServerNotLoadedError())
+
+        const editor = createMockEditor(["import clsx from 'clsx'"])
+        const promise = service.applyImportDecorations(editor)
+        await vi.advanceTimersByTimeAsync(3000)
+        await promise
+
+        // 1 initial + 5 retries = 6 calls
+        expect(spy).toHaveBeenCalledTimes(6)
         expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
       })
 
       it('should preserve earlier resolver result when later resolver also resolves', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['mySymbol'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
-        vi.spyOn(hoverResolver(service), 'resolve').mockResolvedValue(SymbolKind.Class)
+        mockParserReturn(service, [
+          stmt({ localName: 'mySymbol', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
+        spyResolve(HoverSymbolResolver.prototype).mockResolvedValue(SymbolKind.Class)
 
         const editor = createMockEditor(["import { mySymbol } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        // Plugin (Phase 1) result should be preserved, not overwritten by Hover (Phase 2)
         expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
           color: TEST_COLORS[SymbolKind.Function],
         })
       })
 
       it('should use semanticToken as fallback only when hover returns undefined', async () => {
-        vi.mocked(parseImports).mockReturnValue({
-          symbols: ['resolved', 'unresolved'],
-          symbolSources: {},
-          importEndLine: 1,
-        })
-        vi.spyOn(hoverResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
+        mockParserReturn(service, [
+          stmt({ localName: 'resolved', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+          stmt({ localName: 'unresolved', startLine: 0, startColumn: 19, endLine: 0, endColumn: 29 }),
+        ])
+        spyResolve(HoverSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
           return pos.character === 9 ? SymbolKind.Function : undefined
         })
-        vi.spyOn(semanticTokenResolver(service), 'resolve').mockResolvedValue(SymbolKind.Variable)
+        spyResolve(SemanticTokenSymbolResolver.prototype).mockResolvedValue(SymbolKind.Variable)
 
         const editor = createMockEditor(["import { resolved, unresolved } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        const semanticSpy = vi.mocked(semanticTokenResolver(service).resolve)
-        // SemanticToken should only be called for 'unresolved' (hover returned undefined)
-        expect(semanticSpy).toHaveBeenCalledTimes(1)
+        expect(SemanticTokenSymbolResolver.prototype.resolve).toHaveBeenCalledTimes(1)
       })
     })
 
     describe('color mapping', () => {
       it('should map function kind to the injected function color', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+        mockParserReturn(service, [
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { myFn } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -257,8 +323,11 @@ describe('DecorationService', () => {
       })
 
       it('should group symbols with same color into a single setDecorations call', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['ClassA', 'ClassB'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Class)
+        mockParserReturn(service, [
+          stmt({ localName: 'ClassA', startLine: 0, startColumn: 9, endLine: 0, endColumn: 15 }),
+          stmt({ localName: 'ClassB', startLine: 0, startColumn: 17, endLine: 0, endColumn: 23 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Class)
 
         const editor = createMockEditor(["import { ClassA, ClassB } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -269,16 +338,17 @@ describe('DecorationService', () => {
       })
 
       it('should create separate setDecorations calls for different colors', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
-          // myFn at char 9, MyClass at char 15
+        mockParserReturn(service, [
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
+          stmt({ localName: 'MyClass', startLine: 0, startColumn: 15, endLine: 0, endColumn: 22 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
           return pos.character < 14 ? SymbolKind.Function : SymbolKind.Class
         })
 
         const editor = createMockEditor(["import { myFn, MyClass } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        // Two different decoration types should be created (Function color + Class color)
         expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
           color: TEST_COLORS[SymbolKind.Function],
         })
@@ -289,18 +359,21 @@ describe('DecorationService', () => {
 
       it('should skip symbols whose kind has no color in the map', async () => {
         const partialColors: SymbolColorMap = { [SymbolKind.Function]: '#DCDCAA' }
-        service = new DecorationService(partialColors)
-        stubAllResolvers(service)
+        const created = createService(partialColors)
+        service = created.service
+        mockProbe(created.probe)
 
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
+        mockParserReturn(service, [
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
+          stmt({ localName: 'MyClass', startLine: 0, startColumn: 15, endLine: 0, endColumn: 22 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
           return pos.character < 14 ? SymbolKind.Function : SymbolKind.Class
         })
 
         const editor = createMockEditor(["import { myFn, MyClass } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        // Only Function color should be created (Class has no color in partialColors)
         expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledTimes(1)
         expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
           color: '#DCDCAA',
@@ -308,11 +381,14 @@ describe('DecorationService', () => {
       })
 
       it('should not apply any decorations when colors map is empty', async () => {
-        service = new DecorationService({})
-        stubAllResolvers(service)
+        const created = createService({})
+        service = created.service
+        mockProbe(created.probe)
 
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+        mockParserReturn(service, [
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { myFn } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -323,8 +399,10 @@ describe('DecorationService', () => {
 
     describe('caching', () => {
       it('should store resolved kinds in documentCaches', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -343,8 +421,10 @@ describe('DecorationService', () => {
           symbolKinds: new Map([['useState', SymbolKind.Function]]),
         })
 
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        const spy = vi.spyOn(pluginResolver(service), 'resolve')
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype)
 
         const editor = createMockEditor([importLine])
         await service.applyImportDecorations(editor)
@@ -360,8 +440,10 @@ describe('DecorationService', () => {
           symbolKinds: new Map([['useState', SymbolKind.Function]]),
         })
 
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useEffect'], symbolSources: {}, importEndLine: 1 })
-        const spy = vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+        mockParserReturn(service, [
+          stmt({ localName: 'useEffect', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 18 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useEffect } from 'react'"])
         await service.applyImportDecorations(editor)
@@ -378,12 +460,11 @@ describe('DecorationService', () => {
           symbolKinds: new Map([['useState', SymbolKind.Function]]),
         })
 
-        vi.mocked(parseImports).mockReturnValue({
-          symbols: ['useState', 'useEffect'],
-          symbolSources: {},
-          importEndLine: 1,
-        })
-        const spy = vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+          stmt({ localName: 'useEffect', source: 'react', startLine: 0, startColumn: 19, endLine: 0, endColumn: 28 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor([importText])
         await service.applyImportDecorations(editor)
@@ -401,17 +482,14 @@ describe('DecorationService', () => {
           symbolKinds: new Map([['useState', SymbolKind.Function]]),
         })
 
-        vi.mocked(parseImports).mockReturnValue({
-          symbols: ['useState', 'useEffect'],
-          symbolSources: {},
-          importEndLine: 1,
-        })
-        // All resolvers fail for useEffect (return undefined by default from stubAllResolvers)
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+          stmt({ localName: 'useEffect', source: 'react', startLine: 0, startColumn: 19, endLine: 0, endColumn: 28 }),
+        ])
 
         const editor = createMockEditor([importText])
         await service.applyImportDecorations(editor)
 
-        // Cached useState should still be decorated despite useEffect failing
         const calls = vi.mocked(editor.setDecorations).mock.calls
         const decoratedCall = calls.find((call) => Array.isArray(call[1]) && call[1].length > 0)
         expect(decoratedCall).toBeDefined()
@@ -427,12 +505,11 @@ describe('DecorationService', () => {
           symbolKinds: new Map([['useState', SymbolKind.Function]]),
         })
 
-        vi.mocked(parseImports).mockReturnValue({
-          symbols: ['useState', 'useEffect'],
-          symbolSources: {},
-          importEndLine: 1,
-        })
-        vi.spyOn(pluginResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+          stmt({ localName: 'useEffect', source: 'react', startLine: 0, startColumn: 19, endLine: 0, endColumn: 28 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor([importText])
         await service.applyImportDecorations(editor)
@@ -443,138 +520,308 @@ describe('DecorationService', () => {
       })
     })
 
-    describe('tsserver loading retry', () => {
-      it('should schedule a retry when hover resolver throws TsServerLoadingError', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(hoverResolver(service), 'resolve').mockRejectedValue(new TsServerLoadingError())
+    describe('tsserver probe', () => {
+      it('should call probe.waitForReady before resolver pipeline when symbols need resolving', async () => {
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
 
-        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(true)
+        expect(probe.waitForReady).toHaveBeenCalledOnce()
+        expect(probe.waitForReady).toHaveBeenCalledWith(
+          editor.document.uri.toString(),
+          editor.document,
+          expect.objectContaining({ line: 0, character: 9 }),
+        )
       })
 
-      it('should not schedule retry when max retries exceeded', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(hoverResolver(service), 'resolve').mockRejectedValue(new TsServerLoadingError())
+      it('should not call probe when all symbols are cached', async () => {
+        const importLine = "import { useState } from 'react'"
+        const docUri = 'file:///test.ts'
 
-        const editor = createMockEditor(["import { useState } from 'react'"])
-        await service.applyImportDecorations(editor, 5)
-
-        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(false)
-      })
-
-      it('should cancel pending retry when new decoration is requested', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(hoverResolver(service), 'resolve').mockRejectedValue(new TsServerLoadingError())
-
-        const editor = createMockEditor(["import { useState } from 'react'"])
-        await service.applyImportDecorations(editor)
-
-        const firstTimeout = internals(service).retryTimeouts.get(editor.document.uri.toString())
-        expect(firstTimeout).toBeDefined()
-
-        // Trigger new decoration request — should cancel the pending retry
-        await service.applyImportDecorations(editor)
-
-        const secondTimeout = internals(service).retryTimeouts.get(editor.document.uri.toString())
-        expect(secondTimeout).not.toBe(firstTimeout)
-      })
-
-      it('should execute retry after timeout fires', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        const resolveSpy = vi
-          .spyOn(hoverResolver(service), 'resolve')
-          .mockRejectedValueOnce(new TsServerLoadingError())
-          .mockResolvedValueOnce(SymbolKind.Function)
-
-        const editor = createMockEditor(["import { useState } from 'react'"])
-        await service.applyImportDecorations(editor)
-
-        // Fast-forward timer to trigger the retry
-        await vi.advanceTimersByTimeAsync(500)
-
-        // Resolver should have been called twice (initial + retry)
-        expect(resolveSpy).toHaveBeenCalledTimes(2)
-      })
-
-      it('should not schedule retry for non-TsServerLoadingError', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['useState'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(hoverResolver(service), 'resolve').mockRejectedValue(new Error('other error'))
-
-        const editor = createMockEditor(["import { useState } from 'react'"])
-        await service.applyImportDecorations(editor)
-
-        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(false)
-      })
-
-      it('should still apply partial decorations when some symbols resolve and others are loading', async () => {
-        vi.mocked(parseImports).mockReturnValue({
-          symbols: ['useState', 'MyClass'],
-          symbolSources: {},
-          importEndLine: 1,
+        internals(service).documentCaches.set(docUri, {
+          importSectionText: importLine,
+          symbolKinds: new Map([['useState', SymbolKind.Function]]),
         })
-        vi.spyOn(hoverResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
-          if (pos.character === 9) {
-            return SymbolKind.Function
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        const editor = createMockEditor([importLine])
+        await service.applyImportDecorations(editor)
+
+        expect(probe.waitForReady).not.toHaveBeenCalled()
+      })
+
+      it('should cancel previous probe when new decoration request arrives', async () => {
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+        spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+
+        await service.applyImportDecorations(editor)
+        await service.applyImportDecorations(editor)
+
+        expect(probe.cancel).toHaveBeenCalledWith(editor.document.uri.toString())
+      })
+
+      it('should return early when probe returns false (cancelled)', async () => {
+        vi.mocked(probe.waitForReady).mockResolvedValue(false)
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        await service.applyImportDecorations(editor)
+
+        expect(spy).not.toHaveBeenCalled()
+      })
+
+      it('should call probe.dispose on service dispose', () => {
+        service.dispose()
+
+        expect(probe.dispose).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe('stale result prevention', () => {
+      it('should ignore stale resolver results when a newer request has started', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        let resolveFirst!: (value: SymbolKind | undefined) => void
+        const firstPromise = new Promise<SymbolKind | undefined>((resolve) => {
+          resolveFirst = resolve
+        })
+        let callCount = 0
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async () => {
+          callCount++
+          if (callCount === 1) {
+            return firstPromise
           }
-          throw new TsServerLoadingError()
+          return SymbolKind.Class
         })
 
-        const editor = createMockEditor(["import { useState, MyClass } from 'mod'"])
-        await service.applyImportDecorations(editor)
+        const editor = createMockEditor(["import { useState } from 'react'"])
 
-        // Partial decoration should be applied for useState
-        const calls = vi.mocked(editor.setDecorations).mock.calls
-        const decoratedCall = calls.find((call) => Array.isArray(call[1]) && call[1].length > 0)
-        expect(decoratedCall).toBeDefined()
+        // Start first (slow) request
+        const first = service.applyImportDecorations(editor)
 
-        // Retry should be scheduled for MyClass
-        expect(internals(service).retryTimeouts.has(editor.document.uri.toString())).toBe(true)
+        // Wait for first request to reach resolver
+        await new Promise((r) => setTimeout(r, 10))
+
+        // Start second (fast) request — this replaces the active resolver
+        const second = service.applyImportDecorations(editor)
+        await second
+
+        // Now resolve the first (stale) request
+        vi.mocked(editor.setDecorations).mockClear()
+        resolveFirst(SymbolKind.Function)
+        await first
+
+        // Stale result should NOT have applied decorations after the second request completed
+        const applyCalls = vi
+          .mocked(editor.setDecorations)
+          .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(applyCalls).toHaveLength(0)
+      })
+
+      it('should not update cache from stale resolver', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        let resolveFirst!: (value: SymbolKind | undefined) => void
+        const firstPromise = new Promise<SymbolKind | undefined>((resolve) => {
+          resolveFirst = resolve
+        })
+        let callCount = 0
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async () => {
+          callCount++
+          if (callCount === 1) {
+            return firstPromise
+          }
+          return SymbolKind.Class
+        })
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        const docUri = editor.document.uri.toString()
+
+        const first = service.applyImportDecorations(editor)
+        await new Promise((r) => setTimeout(r, 10))
+
+        const second = service.applyImportDecorations(editor)
+        await second
+
+        const cacheAfterSecond = internals(service).documentCaches.get(docUri)
+        expect(cacheAfterSecond!.symbolKinds.get('useState')).toBe(SymbolKind.Class)
+
+        // Stale resolve should not overwrite the cache
+        resolveFirst(SymbolKind.Function)
+        await first
+
+        const cacheAfterFirst = internals(service).documentCaches.get(docUri)
+        expect(cacheAfterFirst!.symbolKinds.get('useState')).toBe(SymbolKind.Class)
+      })
+
+      it('should ignore stale onPhase events', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
+        ])
+
+        let resolvePlugin!: (value: SymbolKind | undefined) => void
+        const pluginPromise = new Promise<SymbolKind | undefined>((resolve) => {
+          resolvePlugin = resolve
+        })
+        let callCount = 0
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async () => {
+          callCount++
+          if (callCount === 1) {
+            return pluginPromise
+          }
+          return undefined
+        })
+
+        const editor = createMockEditor(["import { myFn } from 'mod'"])
+
+        const first = service.applyImportDecorations(editor)
+        await new Promise((r) => setTimeout(r, 10))
+
+        // Second request starts — first resolver is now stale
+        const second = service.applyImportDecorations(editor)
+        await second
+
+        // First resolver's onPhase fires — should be ignored
+        vi.mocked(editor.setDecorations).mockClear()
+        resolvePlugin(SymbolKind.Function)
+        await first
+
+        const applyCalls = vi
+          .mocked(editor.setDecorations)
+          .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(applyCalls).toHaveLength(0)
+      })
+
+      it('should invalidate active resolver on clearDocumentCache', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        let resolvePlugin!: (value: SymbolKind | undefined) => void
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolvePlugin = resolve
+            }),
+        )
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        const docUri = editor.document.uri.toString()
+
+        const promise = service.applyImportDecorations(editor)
+        await new Promise((r) => setTimeout(r, 10))
+
+        service.clearDocumentCache(docUri)
+        expect(internals(service).activeResolvers.has(docUri)).toBe(false)
+
+        vi.mocked(editor.setDecorations).mockClear()
+        resolvePlugin(SymbolKind.Function)
+        await promise
+
+        const applyCalls = vi
+          .mocked(editor.setDecorations)
+          .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(applyCalls).toHaveLength(0)
+      })
+
+      it('should clean up active resolver after successful applyImportDecorations', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        let resolvePlugin!: (value: SymbolKind | undefined) => void
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolvePlugin = resolve
+            }),
+        )
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        const docUri = editor.document.uri.toString()
+
+        expect(internals(service).activeResolvers.has(docUri)).toBe(false)
+
+        const applyPromise = service.applyImportDecorations(editor)
+        await new Promise((r) => setTimeout(r, 10))
+        expect(internals(service).activeResolvers.has(docUri)).toBe(true)
+
+        resolvePlugin(SymbolKind.Function)
+        await applyPromise
+
+        expect(internals(service).activeResolvers.has(docUri)).toBe(false)
       })
     })
 
     describe('progressive enhancement', () => {
       it('should apply decorations progressively as phases complete', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn', 'MyClass'], symbolSources: {}, importEndLine: 1 })
+        mockParserReturn(service, [
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
+          stmt({ localName: 'MyClass', startLine: 0, startColumn: 15, endLine: 0, endColumn: 22 }),
+        ])
 
-        // Plugin resolves myFn immediately, leaves MyClass unresolved
-        vi.spyOn(pluginResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
           return pos.character === 9 ? SymbolKind.Function : undefined
         })
 
-        // Block Hover with a deferred promise
         let resolveHover!: (value: SymbolKind | undefined) => void
         const hoverPromise = new Promise<SymbolKind | undefined>((resolve) => {
           resolveHover = resolve
         })
-        vi.spyOn(hoverResolver(service), 'resolve').mockImplementation(async () => hoverPromise)
+        spyResolve(HoverSymbolResolver.prototype).mockImplementation(async () => hoverPromise)
 
         const editor = createMockEditor(["import { myFn, MyClass } from 'mod'"])
         const applyPromise = service.applyImportDecorations(editor)
 
-        // Flush microtasks to let Plugin phase complete and decorations to be applied
         await vi.advanceTimersByTimeAsync(0)
 
-        // Plugin resolved myFn, decorations should already be applied before Hover completes
         const callsBefore = vi.mocked(editor.setDecorations).mock.calls
         const decoratedBefore = callsBefore.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
         expect(decoratedBefore.length).toBeGreaterThanOrEqual(1)
 
-        // Resolve Hover for MyClass and wait for all phases to complete
         resolveHover(SymbolKind.Class)
         await applyPromise
 
-        // After all phases, additional decoration updates should have been made
         const callsAfter = vi.mocked(editor.setDecorations).mock.calls
         const decoratedAfter = callsAfter.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
         expect(decoratedAfter.length).toBeGreaterThan(decoratedBefore.length)
       })
 
       it('should not call semanticToken for symbols already resolved by hover', async () => {
-        vi.mocked(parseImports).mockReturnValue({ symbols: ['myFn'], symbolSources: {}, importEndLine: 1 })
-        vi.spyOn(hoverResolver(service), 'resolve').mockResolvedValue(SymbolKind.Function)
-        const semanticSpy = vi.spyOn(semanticTokenResolver(service), 'resolve')
+        mockParserReturn(service, [
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
+        ])
+        spyResolve(HoverSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
+        const semanticSpy = spyResolve(SemanticTokenSymbolResolver.prototype)
 
         const editor = createMockEditor(["import { myFn } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -583,15 +830,16 @@ describe('DecorationService', () => {
       })
 
       it('should call semanticToken only for symbols unresolved after hover', async () => {
-        vi.mocked(parseImports).mockReturnValue({
-          symbols: ['resolved', 'unresolved'],
-          symbolSources: {},
-          importEndLine: 1,
-        })
-        vi.spyOn(hoverResolver(service), 'resolve').mockImplementation(async (_doc, pos) => {
+        mockParserReturn(service, [
+          stmt({ localName: 'resolved', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+          stmt({ localName: 'unresolved', startLine: 0, startColumn: 19, endLine: 0, endColumn: 29 }),
+        ])
+        spyResolve(HoverSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
           return pos.character === 9 ? SymbolKind.Function : undefined
         })
-        const semanticSpy = vi.spyOn(semanticTokenResolver(service), 'resolve').mockResolvedValue(SymbolKind.Variable)
+        const semanticSpy = vi
+          .spyOn(SemanticTokenSymbolResolver.prototype, 'resolve')
+          .mockResolvedValue(SymbolKind.Variable)
 
         const editor = createMockEditor(["import { resolved, unresolved } from 'mod'"])
         await service.applyImportDecorations(editor)
@@ -699,17 +947,6 @@ describe('DecorationService', () => {
       expect(() => service.dispose()).not.toThrow()
       expect(internals(service).decorationTypes.size).toBe(0)
       expect(internals(service).documentCaches.size).toBe(0)
-    })
-
-    it('should clear all pending retry timeouts', () => {
-      const timeout1 = setTimeout(() => {}, 1000)
-      const timeout2 = setTimeout(() => {}, 2000)
-      internals(service).retryTimeouts.set('file:///a.ts', timeout1)
-      internals(service).retryTimeouts.set('file:///b.ts', timeout2)
-
-      service.dispose()
-
-      expect(internals(service).retryTimeouts.size).toBe(0)
     })
   })
 

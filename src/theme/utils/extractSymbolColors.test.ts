@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { SymbolKind } from '../../symbol'
-import type { ResolvedThemeData } from '../types'
+import { SymbolKind } from '@/symbol'
+import type { ResolvedThemeData } from '@/theme/types'
 import { extractSymbolColors } from './extractSymbolColors'
 
 describe('extractSymbolColors', () => {

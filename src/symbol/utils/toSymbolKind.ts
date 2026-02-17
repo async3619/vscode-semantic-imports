@@ -1,4 +1,4 @@
-import { SymbolKind } from '../types'
+import { SymbolKind } from '@/symbol/types'
 
 const SYMBOL_KIND_MAP: Partial<Record<string, SymbolKind>> = {
   function: SymbolKind.Function,

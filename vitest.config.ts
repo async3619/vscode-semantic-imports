@@ -1,6 +1,14 @@
+import path from "path";
 import { defineConfig } from "vitest/config";
+import swc from "unplugin-swc";
 
 export default defineConfig({
+  plugins: [swc.vite()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
   test: {
     passWithNoTests: true,
     include: ["src/**/*.test.ts"],

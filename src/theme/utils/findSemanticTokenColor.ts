@@ -1,4 +1,4 @@
-import { SymbolKind } from '../../symbol'
+import { SymbolKind } from '@/symbol'
 
 const SEMANTIC_TOKEN_KEYS: Record<SymbolKind, string> = {
   [SymbolKind.Function]: 'function',

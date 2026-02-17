@@ -1,44 +1,30 @@
 import * as vscode from 'vscode'
-import { Logger } from '../../logger'
-import { BaseSymbolResolver } from '../types'
-import { findTokenTypeAtPosition } from '../utils/findTokenTypeAtPosition'
-import { toSymbolKind } from '../utils/toSymbolKind'
+import { BaseSymbolResolver } from '@/symbol/types'
+import { findTokenTypeAtPosition } from '@/symbol/utils/findTokenTypeAtPosition'
+import { toSymbolKind } from '@/symbol/utils/toSymbolKind'
 
 export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
-  private readonly logger = Logger.create(SemanticTokenSymbolResolver)
   readonly name = 'semanticToken'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
-    const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
-      'vscode.executeDefinitionProvider',
-      document.uri,
-      position,
+    const definition = await this.getDefinition(document, position)
+    if (!definition) {
+      return undefined
+    }
+
+    await this.languageService.openTextDocument(definition.targetUri)
+
+    const result = await this.languageService.getSemanticTokens(definition.targetUri)
+    if (!result) {
+      return undefined
+    }
+
+    const tokenType = findTokenTypeAtPosition(
+      result.tokens,
+      result.legend,
+      definition.targetPos.line,
+      definition.targetPos.character,
     )
-
-    if (!definitions || definitions.length === 0) {
-      return undefined
-    }
-
-    const def = definitions[0]
-    const targetUri = 'targetUri' in def ? def.targetUri : def.uri
-    const targetRange = 'targetUri' in def ? (def.targetSelectionRange ?? def.targetRange) : def.range
-    const targetPos = targetRange.start
-
-    await vscode.workspace.openTextDocument(targetUri)
-
-    const [legend, tokens] = await Promise.all([
-      vscode.commands.executeCommand<vscode.SemanticTokensLegend>(
-        'vscode.provideDocumentSemanticTokensLegend',
-        targetUri,
-      ),
-      vscode.commands.executeCommand<vscode.SemanticTokens>('vscode.provideDocumentSemanticTokens', targetUri),
-    ])
-
-    if (!legend || !tokens) {
-      return undefined
-    }
-
-    const tokenType = findTokenTypeAtPosition(tokens, legend, targetPos.line, targetPos.character)
     return tokenType ? toSymbolKind(tokenType) : undefined
   }
 }

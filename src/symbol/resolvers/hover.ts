@@ -1,27 +1,20 @@
 import * as vscode from 'vscode'
-import { Logger } from '../../logger'
-import { TsServerLoadingError } from '../errors'
-import { SymbolKind, BaseSymbolResolver } from '../types'
-import { extractContentText } from '../utils/extractContentText'
-import { isFunctionType } from '../utils/isFunctionType'
-import { loadTypeScript } from '../utils/loadTypeScript'
-import { toSymbolKind } from '../utils/toSymbolKind'
+import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
+import { SymbolKind, BaseSymbolResolver } from '@/symbol/types'
+import { extractContentText } from '@/symbol/utils/extractContentText'
+import { isFunctionType } from '@/symbol/utils/isFunctionType'
+import { loadTypeScript } from '@/symbol/utils/loadTypeScript'
+import { toSymbolKind } from '@/symbol/utils/toSymbolKind'
 
 const VARIABLE_KEYWORDS = new Set(['const', 'let', 'var'])
 const TYPE_EXTRACT_PATTERN = /\(alias\)\s+(?:const|let|var)\s+\S+\s*:\s*(.+)/
 
 export class HoverSymbolResolver extends BaseSymbolResolver {
-  private readonly logger = Logger.create(HoverSymbolResolver)
   readonly name = 'hover'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
-    const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
-      'vscode.executeHoverProvider',
-      document.uri,
-      position,
-    )
-
-    if (!hovers || hovers.length === 0) {
+    const hovers = await this.languageService.getHovers(document.uri, position)
+    if (hovers.length === 0) {
       return undefined
     }
 
@@ -30,7 +23,8 @@ export class HoverSymbolResolver extends BaseSymbolResolver {
         const text = extractContentText(content)
 
         if (/\(loading\.\.\.\)/i.test(text)) {
-          throw new TsServerLoadingError()
+          this.logger.debug('TypeScript Server not ready (loading...), will retry: ', text)
+          throw new TypeScriptServerNotLoadedError()
         }
 
         const match = text.match(/\(alias\)\s+(function|class|interface|type|enum|namespace|const|let|var|module)\b/)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SymbolKind } from '../../symbol'
+import { SymbolKind } from '@/symbol'
 import { findSemanticTokenColor } from './findSemanticTokenColor'
 
 describe('findSemanticTokenColor', () => {

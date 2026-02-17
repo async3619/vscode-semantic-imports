@@ -1,5 +1,7 @@
 import * as esbuild from 'esbuild'
 import * as fs from 'fs'
+import esbuildPluginTscModule from 'esbuild-plugin-tsc'
+const { esbuildPluginTsc } = esbuildPluginTscModule
 
 const isWatch = process.argv.includes('--watch')
 
@@ -50,12 +52,13 @@ const extensionOptions = {
   sourcemap: true,
   minify: !isWatch,
   keepNames: true,
-  plugins: isWatch ? [watchPlugin] : [],
+  alias: { '@': './src' },
+  plugins: [esbuildPluginTsc({ force: true }), ...(isWatch ? [watchPlugin] : [])],
 }
 
 /** @type {import('esbuild').BuildOptions} */
 const tsPluginOptions = {
-  entryPoints: ['src/tsPlugin/index.ts'],
+  entryPoints: ['src/typescript/plugin/index.ts'],
   bundle: true,
   outfile: 'tsPlugin/index.js',
   external: ['typescript', 'typescript/lib/tsserverlibrary'],
@@ -65,6 +68,7 @@ const tsPluginOptions = {
   sourcemap: true,
   minify: !isWatch,
   keepNames: true,
+  alias: { '@': './src' },
   plugins: isWatch ? [watchPlugin, installTsPlugin] : [installTsPlugin],
 }
 

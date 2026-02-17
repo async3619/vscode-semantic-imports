@@ -17,10 +17,13 @@ const eslintConfig = defineConfig([
             'src/symbol/utils/*.test.ts',
             'src/symbol/resolvers/*.test.ts',
             'src/theme/*.test.ts',
-            'src/tsPlugin/*.test.ts',
+            'src/typescript/plugin/*.test.ts',
+            'src/typescript/language/*.test.ts',
             'src/theme/utils/*.test.ts',
+            'src/utils/*.test.ts',
+            'src/parser/*.test.ts',
           ],
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 20,
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 25,
         },
       },
     },
@@ -31,6 +34,17 @@ const eslintConfig = defineConfig([
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/explicit-function-return-type': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../*'],
+              message: 'Use path alias (@/...) instead of relative parent imports.',
+            },
+          ],
+        },
+      ],
     },
   },
   prettierPlugin,

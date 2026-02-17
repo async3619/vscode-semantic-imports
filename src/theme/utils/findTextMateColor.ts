@@ -1,5 +1,5 @@
-import { SymbolKind } from '../../symbol'
-import type { TokenColorRule } from '../types'
+import { SymbolKind } from '@/symbol'
+import type { TokenColorRule } from '@/theme/types'
 
 const TEXTMATE_SCOPES: Record<SymbolKind, string[]> = {
   [SymbolKind.Function]: ['entity.name.function'],

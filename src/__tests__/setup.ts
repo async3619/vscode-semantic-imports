@@ -1,3 +1,4 @@
+import 'reflect-metadata'
 import { vi } from 'vitest'
 
 class MockPosition {
@@ -10,9 +11,19 @@ class MockPosition {
 class MockRange {
   public readonly start: MockPosition
   public readonly end: MockPosition
-  constructor(start: MockPosition, end: MockPosition) {
-    this.start = start
-    this.end = end
+  constructor(
+    startOrLine: MockPosition | number,
+    endOrChar: MockPosition | number,
+    endLine?: number,
+    endChar?: number,
+  ) {
+    if (typeof startOrLine === 'number') {
+      this.start = new MockPosition(startOrLine, endOrChar as number)
+      this.end = new MockPosition(endLine!, endChar!)
+    } else {
+      this.start = startOrLine
+      this.end = endOrChar as MockPosition
+    }
   }
 }
 
@@ -58,7 +69,27 @@ class MockUri {
   }
 }
 
+class MockEventEmitter<T> {
+  private listeners: ((e: T) => void)[] = []
+
+  event = (listener: (e: T) => void) => {
+    this.listeners.push(listener)
+    return { dispose: () => this.listeners.splice(this.listeners.indexOf(listener), 1) }
+  }
+
+  fire(data: T) {
+    for (const listener of this.listeners) {
+      listener(data)
+    }
+  }
+
+  dispose() {
+    this.listeners = []
+  }
+}
+
 vi.mock('vscode', () => ({
+  EventEmitter: MockEventEmitter,
   Position: MockPosition,
   Range: MockRange,
   MarkdownString: MockMarkdownString,

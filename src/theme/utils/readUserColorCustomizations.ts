@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
-import { SymbolKind } from '../../symbol'
-import type { SymbolColorMap, TokenColorRule } from '../types'
+import { SymbolKind } from '@/symbol'
+import type { SymbolColorMap, TokenColorRule } from '@/theme/types'
 import { findSemanticTokenColor } from './findSemanticTokenColor'
 import { findTextMateColor } from './findTextMateColor'
 

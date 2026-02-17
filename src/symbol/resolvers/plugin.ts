@@ -1,55 +1,36 @@
 import * as vscode from 'vscode'
-import { Logger } from '../../logger'
-import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
-import { TsServerLoadingError } from '../errors'
-import { SymbolKind, BaseSymbolResolver } from '../types'
-
-interface CompletionInfoResponse {
-  body?: Record<string, unknown>
-}
+import { RESPONSE_KEY, type PluginResponse } from '@/typescript/plugin/protocol'
+import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
+import { SymbolKind, BaseSymbolResolver } from '@/symbol/types'
 
 export class PluginSymbolResolver extends BaseSymbolResolver {
-  private readonly logger = Logger.create(PluginSymbolResolver)
   readonly name = 'plugin'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
-    const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
-      'vscode.executeDefinitionProvider',
-      document.uri,
-      position,
-    )
-
-    if (!definitions || definitions.length === 0) {
+    const definition = await this.getDefinition(document, position)
+    if (!definition) {
       return undefined
     }
 
-    const def = definitions[0]
-    const targetUri = 'targetUri' in def ? def.targetUri : def.uri
-    const targetRange = 'targetUri' in def ? (def.targetSelectionRange ?? def.targetRange) : def.range
-    const targetPos = targetRange.start
-
-    if (targetUri.scheme !== 'file') {
+    if (definition.targetUri.scheme !== 'file') {
       return undefined
     }
 
-    let result: CompletionInfoResponse | undefined
+    let result
     try {
-      result = await vscode.commands.executeCommand<CompletionInfoResponse>(
-        'typescript.tsserverRequest',
-        'completionInfo',
-        {
-          file: targetUri.fsPath,
-          line: targetPos.line + 1,
-          offset: targetPos.character + 1,
-          triggerCharacter: { id: 'resolve' },
-        },
+      result = await this.languageService.requestCompletionInfo(
+        definition.targetUri.fsPath,
+        definition.targetPos.line + 1,
+        definition.targetPos.character + 1,
+        { id: 'resolve' },
       )
+      this.logger.debug('plugin response received:', result)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
 
       if (message.includes('No Project')) {
         this.logger.debug('TypeScript Server not ready (No Project), will retry')
-        throw new TsServerLoadingError()
+        throw new TypeScriptServerNotLoadedError()
       }
 
       this.logger.debug('tsserver request failed:', message)
@@ -66,8 +47,25 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
       return undefined
     }
 
+    if (response.isNotReady) {
+      this.logger.debug('syntax server returned transient unknown symbol, will retry')
+      throw new TypeScriptServerNotLoadedError()
+    }
+
     if (response.isFunction) {
       return SymbolKind.Function
+    } else if (response.isClass) {
+      return SymbolKind.Class
+    } else if (response.isInterface) {
+      return SymbolKind.Interface
+    } else if (response.isType) {
+      return SymbolKind.Type
+    } else if (response.isEnum) {
+      return SymbolKind.Enum
+    } else if (response.isNamespace) {
+      return SymbolKind.Namespace
+    } else if (response.isVariable) {
+      return SymbolKind.Variable
     }
 
     return undefined

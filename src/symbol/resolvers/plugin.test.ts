@@ -1,9 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { TsServerLoadingError } from '../errors'
+import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
 import { PluginSymbolResolver } from './plugin'
-import { SymbolKind } from '../types'
-import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
+import { SymbolKind } from '@/symbol/types'
+import { RESPONSE_KEY, type PluginResponse, type ResolveResponse } from '@/typescript/plugin/protocol'
+import type { TypeScriptLanguageService, DefinitionResult } from '@/typescript/language'
+
+const ALL_FALSE: Omit<ResolveResponse, 'id'> = {
+  isFunction: false,
+  isClass: false,
+  isInterface: false,
+  isType: false,
+  isEnum: false,
+  isNamespace: false,
+  isVariable: false,
+  isNotReady: false,
+  debug: { symbolFlags: 0, symbolName: 'test', wasAlias: false, aliasedFlags: null },
+}
 
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
@@ -13,28 +26,22 @@ function createMockPosition(line = 0, character = 0) {
   return new vscode.Position(line, character)
 }
 
-function createMockLocation(uri = 'file:///def.ts', line = 0, character = 0, endCharacter = 3) {
-  return {
-    uri: vscode.Uri.parse(uri),
-    range: new vscode.Range(new vscode.Position(line, character), new vscode.Position(line, endCharacter)),
-  } as vscode.Location
+function createDefinitionResult(uri = 'file:///def.ts', line = 0, character = 0, endCharacter = 3): DefinitionResult {
+  const targetUri = vscode.Uri.parse(uri)
+  const targetRange = new vscode.Range(new vscode.Position(line, character), new vscode.Position(line, endCharacter))
+  return { targetUri, targetRange, targetPos: targetRange.start }
 }
 
-function mockPluginResolution(options: {
-  definitions?: vscode.Location[] | null
-  completionInfo?: {
-    body?: Record<string, unknown>
-  } | null
-}) {
-  vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-    if (command === 'vscode.executeDefinitionProvider') {
-      return options.definitions ?? null
-    }
-    if (command === 'typescript.tsserverRequest') {
-      return options.completionInfo ?? null
-    }
-    return null
-  })
+function createMockLanguageService(overrides?: Partial<TypeScriptLanguageService>): TypeScriptLanguageService {
+  return {
+    getDefinition: vi.fn().mockResolvedValue(null),
+    getHovers: vi.fn().mockResolvedValue([]),
+    requestCompletionInfo: vi.fn().mockResolvedValue(undefined),
+    requestQuickInfo: vi.fn().mockResolvedValue(undefined),
+    getSemanticTokens: vi.fn().mockResolvedValue(null),
+    openTextDocument: vi.fn().mockResolvedValue({}),
+    ...overrides,
+  } as unknown as TypeScriptLanguageService
 }
 
 function createCompletionInfoWithResponse(response: PluginResponse) {
@@ -43,151 +50,213 @@ function createCompletionInfoWithResponse(response: PluginResponse) {
 
 describe('PluginSymbolResolver', () => {
   let resolver: PluginSymbolResolver
+  let languageService: TypeScriptLanguageService
 
   beforeEach(() => {
-    resolver = new PluginSymbolResolver()
-    vi.mocked(vscode.commands.executeCommand).mockReset()
+    languageService = createMockLanguageService()
+    resolver = new PluginSymbolResolver(languageService)
   })
 
   it('should return undefined when definition provider returns null', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null)
-    const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBeUndefined()
-  })
-
-  it('should return undefined when definition provider returns empty array', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
   it('should return undefined when response key is not present (plugin not loaded)', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: { body: {} },
-    })
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue({ body: {} })
+
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
   it('should return undefined when completionInfo has no body', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: {},
-    })
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue({})
+
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
-  it('should return undefined when completionInfo is null', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: null,
-    })
+  it('should return undefined when completionInfo is undefined', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
-  it('should return Function when response indicates isFunction=true', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: createCompletionInfoWithResponse({ id: 'resolve', isFunction: true }),
-    })
+  it('should return Function when isFunction is true', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isFunction: true }),
+    )
+
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBe(SymbolKind.Function)
   })
 
-  it('should return undefined when response indicates isFunction=false', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: createCompletionInfoWithResponse({ id: 'resolve', isFunction: false }),
-    })
+  it('should return Class when isClass is true', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isClass: true }),
+    )
+
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+    expect(result).toBe(SymbolKind.Class)
+  })
+
+  it('should return Interface when isInterface is true', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isInterface: true }),
+    )
+
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+    expect(result).toBe(SymbolKind.Interface)
+  })
+
+  it('should return Type when isType is true', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isType: true }),
+    )
+
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+    expect(result).toBe(SymbolKind.Type)
+  })
+
+  it('should return Enum when isEnum is true', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isEnum: true }),
+    )
+
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+    expect(result).toBe(SymbolKind.Enum)
+  })
+
+  it('should return Namespace when isNamespace is true', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isNamespace: true }),
+    )
+
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+    expect(result).toBe(SymbolKind.Namespace)
+  })
+
+  it('should return Variable when isVariable is true', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isVariable: true }),
+    )
+
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+    expect(result).toBe(SymbolKind.Variable)
+  })
+
+  it('should throw TypeScriptServerNotLoadedError when plugin reports not ready', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isNotReady: true }),
+    )
+
+    await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(
+      TypeScriptServerNotLoadedError,
+    )
+  })
+
+  it('should return undefined when all flags are false', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE }),
+    )
+
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
   it('should return undefined when response is an error', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation()],
-      completionInfo: createCompletionInfoWithResponse({
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({
         id: 'error',
         error: { name: 'PluginError', message: 'no program' },
       }),
-    })
+    )
+
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
-  it('should call tsserverRequest with completionInfo and triggerCharacter', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation('file:///def.ts', 5, 4, 10)],
-      completionInfo: createCompletionInfoWithResponse({ id: 'resolve', isFunction: true }),
-    })
+  it('should call requestCompletionInfo with correct arguments', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('file:///def.ts', 5, 4, 10))
+    vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(
+      createCompletionInfoWithResponse({ id: 'resolve', ...ALL_FALSE, isFunction: true }),
+    )
 
     await resolver.resolve(createMockDocument(), createMockPosition())
 
-    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('typescript.tsserverRequest', 'completionInfo', {
-      file: '/def.ts',
-      line: 6,
-      offset: 5,
-      triggerCharacter: { id: 'resolve' },
-    })
+    expect(languageService.requestCompletionInfo).toHaveBeenCalledWith('/def.ts', 6, 5, { id: 'resolve' })
   })
 
   it('should return undefined when definition target is not a file URI', async () => {
-    mockPluginResolution({
-      definitions: [createMockLocation('git:///def.ts')],
-      completionInfo: null,
-    })
-    const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBeUndefined()
-  })
-
-  it('should throw TsServerLoadingError when tsserverRequest throws "No Project" error', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-      if (command === 'vscode.executeDefinitionProvider') {
-        return [createMockLocation()]
-      }
-      if (command === 'typescript.tsserverRequest') {
-        throw new Error('No Project.')
-      }
-      return null
-    })
-
-    await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
-  })
-
-  it('should return undefined when tsserverRequest throws a non "No Project" error', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-      if (command === 'vscode.executeDefinitionProvider') {
-        return [createMockLocation()]
-      }
-      if (command === 'typescript.tsserverRequest') {
-        throw new Error('Some other error')
-      }
-      return null
-    })
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('git:///def.ts'))
 
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
-  it('should handle LocationLink with targetSelectionRange', async () => {
-    const targetUri = vscode.Uri.parse('file:///linked.ts')
-    const targetRange = new vscode.Range(new vscode.Position(10, 0), new vscode.Position(10, 20))
-    const targetSelectionRange = new vscode.Range(new vscode.Position(10, 7), new vscode.Position(10, 12))
+  it('should throw TypeScriptServerNotLoadedError when requestCompletionInfo throws "No Project" error', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockRejectedValue(new Error('No Project.'))
 
-    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-      if (command === 'vscode.executeDefinitionProvider') {
-        return [{ targetUri, targetRange, targetSelectionRange }]
-      }
-      if (command === 'typescript.tsserverRequest') {
-        return createCompletionInfoWithResponse({ id: 'resolve', isFunction: false })
-      }
-      return null
-    })
+    await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(
+      TypeScriptServerNotLoadedError,
+    )
+  })
+
+  it('should return undefined when requestCompletionInfo throws a non "No Project" error', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+    vi.mocked(languageService.requestCompletionInfo).mockRejectedValue(new Error('Some other error'))
 
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
+  })
+
+  describe('definition cross-verification via hover', () => {
+    it('should call getHovers when getDefinition returns null', async () => {
+      await resolver.resolve(createMockDocument(), createMockPosition())
+
+      expect(languageService.getHovers).toHaveBeenCalled()
+    })
+
+    it('should not call getHovers when getDefinition returns a result', async () => {
+      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+      vi.mocked(languageService.requestCompletionInfo).mockResolvedValue(undefined)
+
+      await resolver.resolve(createMockDocument(), createMockPosition())
+
+      expect(languageService.getHovers).not.toHaveBeenCalled()
+    })
+
+    it('should throw TypeScriptServerNotLoadedError when definition is null and hover contains (loading...)', async () => {
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(loading...)')] } as vscode.Hover,
+      ])
+
+      await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(
+        TypeScriptServerNotLoadedError,
+      )
+    })
+
+    it('should return undefined when definition is null and hover has no loading indicator', async () => {
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(alias) function foo(): void')] } as vscode.Hover,
+      ])
+
+      const result = await resolver.resolve(createMockDocument(), createMockPosition())
+      expect(result).toBeUndefined()
+    })
   })
 })
