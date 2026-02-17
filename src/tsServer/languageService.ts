@@ -66,7 +66,7 @@ export class TypeScriptLanguageService {
       offset,
     })
 
-    return result?.body ?? undefined
+    return result?.body
   }
 
   async getSemanticTokens(
