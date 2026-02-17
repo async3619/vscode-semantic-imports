@@ -1,5 +1,7 @@
 import * as esbuild from 'esbuild'
 import * as fs from 'fs'
+import esbuildPluginTscModule from 'esbuild-plugin-tsc'
+const { esbuildPluginTsc } = esbuildPluginTscModule
 
 const isWatch = process.argv.includes('--watch')
 
@@ -51,7 +53,7 @@ const extensionOptions = {
   minify: !isWatch,
   keepNames: true,
   alias: { '@': './src' },
-  plugins: isWatch ? [watchPlugin] : [],
+  plugins: [esbuildPluginTsc({ force: true }), ...(isWatch ? [watchPlugin] : [])],
 }
 
 /** @type {import('esbuild').BuildOptions} */

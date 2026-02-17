@@ -1,5 +1,7 @@
+import { injectable } from 'inversify'
 import type { ImportStatement } from './types'
 
+@injectable()
 export class TypeScriptParser {
   parseImports(text: string) {
     const lines = text.split('\n')

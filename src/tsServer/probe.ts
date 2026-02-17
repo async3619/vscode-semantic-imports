@@ -1,6 +1,7 @@
+import { injectable } from 'inversify'
 import * as vscode from 'vscode'
 import { Logger } from '@/logger'
-import type { TypeScriptLanguageService } from './languageService'
+import { TypeScriptLanguageService } from './languageService'
 
 const DEFAULT_TIMEOUT_MS = 10_000
 const PROBE_INTERVAL_MS = 500
@@ -9,6 +10,7 @@ export interface ProbeOptions {
   timeout?: number
 }
 
+@injectable()
 export class TypeScriptServerProbe implements vscode.Disposable {
   private readonly logger = Logger.create(TypeScriptServerProbe)
   private readonly controllers = new Map<string, AbortController>()

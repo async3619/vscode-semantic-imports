@@ -1,7 +1,9 @@
+import 'reflect-metadata'
 import * as vscode from 'vscode'
+import { createContainer } from './di'
 import { DecorationService } from './decoration'
-import { Logger } from './logger'
 import { ThemeColorResolver } from './theme'
+import { Logger } from './logger'
 import { debounce } from './utils/debounce'
 
 const SUPPORTED_LANGUAGES = new Set(['typescript', 'typescriptreact'])
@@ -12,13 +14,19 @@ function isSupported(document: vscode.TextDocument) {
 }
 
 class Extension implements vscode.Disposable {
-  private readonly service = new DecorationService()
-  private readonly themeResolver = new ThemeColorResolver()
+  private readonly service: DecorationService
+  private readonly themeResolver: ThemeColorResolver
   private readonly debouncedTriggerDecoration = debounce((editor: vscode.TextEditor) => {
     if (!editor.document.isClosed) {
       this.triggerDecoration(editor)
     }
   }, DEBOUNCE_DELAY_MS)
+
+  constructor() {
+    const container = createContainer()
+    this.service = container.get(DecorationService)
+    this.themeResolver = container.get(ThemeColorResolver)
+  }
 
   activate(context: vscode.ExtensionContext) {
     this.refreshColors()
