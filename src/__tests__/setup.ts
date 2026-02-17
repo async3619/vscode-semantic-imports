@@ -68,7 +68,27 @@ class MockUri {
   }
 }
 
+class MockEventEmitter<T> {
+  private listeners: ((e: T) => void)[] = []
+
+  event = (listener: (e: T) => void) => {
+    this.listeners.push(listener)
+    return { dispose: () => this.listeners.splice(this.listeners.indexOf(listener), 1) }
+  }
+
+  fire(data: T) {
+    for (const listener of this.listeners) {
+      listener(data)
+    }
+  }
+
+  dispose() {
+    this.listeners = []
+  }
+}
+
 vi.mock('vscode', () => ({
+  EventEmitter: MockEventEmitter,
   Position: MockPosition,
   Range: MockRange,
   MarkdownString: MockMarkdownString,

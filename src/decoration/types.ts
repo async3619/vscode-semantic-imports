@@ -7,6 +7,6 @@ export interface DocumentCache {
 }
 
 export interface SymbolOccurrence {
-  symbol: string
+  source: string
   range: vscode.Range
 }

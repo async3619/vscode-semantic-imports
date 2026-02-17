@@ -42,6 +42,7 @@ describe('TypeScriptServerProbe', () => {
   })
 
   afterEach(() => {
+    probe.dispose()
     vi.useRealTimers()
   })
 
@@ -52,47 +53,44 @@ describe('TypeScriptServerProbe', () => {
         quickinfo: { body: { kind: 'function' } },
       })
 
-      const controller = new AbortController()
-      const result = await probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       expect(result).toBe(true)
       expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(2)
     })
 
-    it('should return false when definitions are empty', async () => {
+    it('should return true (proceed) when definitions are empty after all attempts', async () => {
       vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
 
-      const controller = new AbortController()
-      const promise = probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
 
-      // First check returns not-ready, then polling starts with intervals
-      // Advance through all probe attempts
+      // Advance through all probe attempts (10000ms / 500ms = 20 attempts)
       for (let i = 0; i < 19; i++) {
         await vi.advanceTimersByTimeAsync(500)
       }
 
       const result = await promise
-      expect(result).toBe(false)
+      // Timeout = proceed anyway (true), not false
+      expect(result).toBe(true)
     })
 
-    it('should return false when quickinfo returns empty body', async () => {
+    it('should return true (proceed) when quickinfo returns empty body', async () => {
       mockProbeResponse({
         definitions: [createMockLocation()],
         quickinfo: {},
       })
 
-      const controller = new AbortController()
-      const promise = probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
 
       for (let i = 0; i < 19; i++) {
         await vi.advanceTimersByTimeAsync(500)
       }
 
       const result = await promise
-      expect(result).toBe(false)
+      expect(result).toBe(true)
     })
 
-    it('should return false when quickinfo throws error', async () => {
+    it('should return true (proceed) when quickinfo throws error', async () => {
       vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
         if (command === 'vscode.executeDefinitionProvider') {
           return [createMockLocation()]
@@ -103,15 +101,14 @@ describe('TypeScriptServerProbe', () => {
         return null
       })
 
-      const controller = new AbortController()
-      const promise = probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
 
       for (let i = 0; i < 19; i++) {
         await vi.advanceTimersByTimeAsync(500)
       }
 
       const result = await promise
-      expect(result).toBe(false)
+      expect(result).toBe(true)
     })
 
     it('should poll and return true when tsserver becomes ready after several attempts', async () => {
@@ -131,8 +128,7 @@ describe('TypeScriptServerProbe', () => {
         return null
       })
 
-      const controller = new AbortController()
-      const promise = probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       // Advance through 3 poll intervals (attempts 2, 3, 4)
       await vi.advanceTimersByTimeAsync(500)
@@ -143,29 +139,38 @@ describe('TypeScriptServerProbe', () => {
       expect(result).toBe(true)
     })
 
-    it('should return false when signal is already aborted', async () => {
-      const controller = new AbortController()
-      controller.abort()
-
-      const result = await probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
-
-      expect(result).toBe(false)
-      expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
-    })
-
-    it('should return false when signal is aborted during polling', async () => {
+    it('should return false when cancelled via cancel()', async () => {
       vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
 
-      const controller = new AbortController()
-      const promise = probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
-      // Let first check fail, then abort during delay
+      // Let first check fail, then cancel during delay
       await vi.advanceTimersByTimeAsync(250)
-      controller.abort()
+      probe.cancel('test-key')
       await vi.advanceTimersByTimeAsync(250)
 
       const result = await promise
       expect(result).toBe(false)
+    })
+
+    it('should auto-cancel previous call when called again with same key', async () => {
+      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
+
+      const firstPromise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Second call with same key should cancel the first
+      mockProbeResponse({
+        definitions: [createMockLocation()],
+        quickinfo: { body: { kind: 'function' } },
+      })
+      const secondPromise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
+
+      await vi.advanceTimersByTimeAsync(500)
+
+      const [firstResult, secondResult] = await Promise.all([firstPromise, secondPromise])
+      expect(firstResult).toBe(false) // cancelled
+      expect(secondResult).toBe(true) // proceeded
     })
 
     it('should return true when definitions target has non-file URI', async () => {
@@ -174,8 +179,7 @@ describe('TypeScriptServerProbe', () => {
         quickinfo: null,
       })
 
-      const controller = new AbortController()
-      const result = await probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       expect(result).toBe(true)
       // Should not call quickinfo for non-file URIs
@@ -197,8 +201,7 @@ describe('TypeScriptServerProbe', () => {
         return null
       })
 
-      const controller = new AbortController()
-      const result = await probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       expect(result).toBe(true)
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith('typescript.tsserverRequest', 'quickinfo', {
@@ -214,8 +217,7 @@ describe('TypeScriptServerProbe', () => {
         quickinfo: { body: { kind: 'function' } },
       })
 
-      const controller = new AbortController()
-      await probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith('typescript.tsserverRequest', 'quickinfo', {
         file: '/def.ts',
@@ -224,18 +226,41 @@ describe('TypeScriptServerProbe', () => {
       })
     })
 
-    it('should return false when definitions provider returns null', async () => {
+    it('should return true (proceed) when definitions provider returns null', async () => {
       vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null)
 
-      const controller = new AbortController()
-      const promise = probe.waitForReady(createMockDocument(), createMockPosition(), controller.signal)
+      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
 
       for (let i = 0; i < 19; i++) {
         await vi.advanceTimersByTimeAsync(500)
       }
 
       const result = await promise
-      expect(result).toBe(false)
+      expect(result).toBe(true)
+    })
+
+    it('should use custom timeout option', async () => {
+      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
+
+      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 1_000 })
+
+      // 1000ms / 500ms = 2 max attempts, so only 1 poll needed
+      await vi.advanceTimersByTimeAsync(500)
+
+      const result = await promise
+      expect(result).toBe(true)
+    })
+
+    it('should clean up controllers on dispose', () => {
+      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
+
+      // Start a probe that will be pending
+      probe.waitForReady('key-a', createMockDocument(), createMockPosition())
+
+      probe.dispose()
+
+      // Starting a new probe after dispose should work fine
+      expect(() => probe.waitForReady('key-b', createMockDocument(), createMockPosition())).not.toThrow()
     })
   })
 })
