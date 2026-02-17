@@ -1,14 +1,9 @@
 import * as vscode from 'vscode'
 import { Logger } from '../logger'
+import type { TypeScriptLanguageService } from './languageService'
 
 const DEFAULT_TIMEOUT_MS = 10_000
 const PROBE_INTERVAL_MS = 500
-
-interface QuickInfoResponse {
-  body?: {
-    kind: string
-  }
-}
 
 export interface ProbeOptions {
   timeout?: number
@@ -17,6 +12,8 @@ export interface ProbeOptions {
 export class TypeScriptServerProbe implements vscode.Disposable {
   private readonly logger = Logger.create(TypeScriptServerProbe)
   private readonly controllers = new Map<string, AbortController>()
+
+  constructor(private readonly languageService: TypeScriptLanguageService) {}
 
   async waitForReady(key: string, document: vscode.TextDocument, position: vscode.Position, options?: ProbeOptions) {
     this.cancel(key)
@@ -84,37 +81,25 @@ export class TypeScriptServerProbe implements vscode.Disposable {
   }
 
   private async check(document: vscode.TextDocument, position: vscode.Position) {
-    const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
-      'vscode.executeDefinitionProvider',
-      document.uri,
-      position,
-    )
+    const definition = await this.languageService.getDefinition(document.uri, position)
 
-    if (!definitions || definitions.length === 0) {
+    if (!definition) {
       this.logger.debug('probe: empty definitions')
       return false
     }
 
-    const def = definitions[0]
-    const targetUri = 'targetUri' in def ? def.targetUri : def.uri
-    const targetRange = 'targetUri' in def ? (def.targetSelectionRange ?? def.targetRange) : def.range
-
-    if (targetUri.scheme !== 'file') {
+    if (definition.targetUri.scheme !== 'file') {
       return true
     }
 
     try {
-      const result = await vscode.commands.executeCommand<QuickInfoResponse>(
-        'typescript.tsserverRequest',
-        'quickinfo',
-        {
-          file: targetUri.fsPath,
-          line: targetRange.start.line + 1,
-          offset: targetRange.start.character + 1,
-        },
+      const body = await this.languageService.requestQuickInfo(
+        definition.targetUri.fsPath,
+        definition.targetRange.start.line + 1,
+        definition.targetRange.start.character + 1,
       )
 
-      if (result?.body?.kind) {
+      if (body?.kind) {
         return true
       }
 

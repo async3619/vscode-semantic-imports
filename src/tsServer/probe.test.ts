@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { TypeScriptServerProbe } from './probe'
+import type { TypeScriptLanguageService, DefinitionResult } from './languageService'
 
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
@@ -10,35 +11,32 @@ function createMockPosition(line = 0, character = 0) {
   return new vscode.Position(line, character)
 }
 
-function createMockLocation(uri = 'file:///def.ts', line = 0, character = 0, endCharacter = 3) {
-  return {
-    uri: vscode.Uri.parse(uri),
-    range: new vscode.Range(new vscode.Position(line, character), new vscode.Position(line, endCharacter)),
-  } as vscode.Location
+function createDefinitionResult(uri = 'file:///def.ts', line = 0, character = 0, endCharacter = 3): DefinitionResult {
+  const targetUri = vscode.Uri.parse(uri)
+  const targetRange = new vscode.Range(new vscode.Position(line, character), new vscode.Position(line, endCharacter))
+  return { targetUri, targetRange, targetPos: targetRange.start }
 }
 
-function mockProbeResponse(options: {
-  definitions?: vscode.Location[] | null
-  quickinfo?: { body?: { kind: string } } | null
-}) {
-  vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-    if (command === 'vscode.executeDefinitionProvider') {
-      return options.definitions ?? null
-    }
-    if (command === 'typescript.tsserverRequest') {
-      return options.quickinfo ?? null
-    }
-    return null
-  })
+function createMockLanguageService(overrides?: Partial<TypeScriptLanguageService>): TypeScriptLanguageService {
+  return {
+    getDefinition: vi.fn().mockResolvedValue(null),
+    getHovers: vi.fn().mockResolvedValue([]),
+    requestCompletionInfo: vi.fn().mockResolvedValue(undefined),
+    requestQuickInfo: vi.fn().mockResolvedValue(undefined),
+    getSemanticTokens: vi.fn().mockResolvedValue(null),
+    openTextDocument: vi.fn().mockResolvedValue({}),
+    ...overrides,
+  } as unknown as TypeScriptLanguageService
 }
 
 describe('TypeScriptServerProbe', () => {
   let probe: TypeScriptServerProbe
+  let languageService: TypeScriptLanguageService
 
   beforeEach(() => {
     vi.useFakeTimers()
-    probe = new TypeScriptServerProbe()
-    vi.mocked(vscode.commands.executeCommand).mockReset()
+    languageService = createMockLanguageService()
+    probe = new TypeScriptServerProbe(languageService)
   })
 
   afterEach(() => {
@@ -48,20 +46,21 @@ describe('TypeScriptServerProbe', () => {
 
   describe('waitForReady', () => {
     it('should return true immediately when tsserver is ready on first check', async () => {
-      mockProbeResponse({
-        definitions: [createMockLocation()],
-        quickinfo: { body: { kind: 'function' } },
+      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+      vi.mocked(languageService.requestQuickInfo).mockResolvedValue({
+        kind: 'function',
+        kindModifiers: '',
+        displayString: '',
       })
 
       const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       expect(result).toBe(true)
-      expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(2)
+      expect(languageService.getDefinition).toHaveBeenCalledTimes(1)
+      expect(languageService.requestQuickInfo).toHaveBeenCalledTimes(1)
     })
 
     it('should return true (proceed) when definitions are empty after all attempts', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
-
       const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
 
       // Advance through all probe attempts (10000ms / 500ms = 20 attempts)
@@ -74,11 +73,8 @@ describe('TypeScriptServerProbe', () => {
       expect(result).toBe(true)
     })
 
-    it('should return true (proceed) when quickinfo returns empty body', async () => {
-      mockProbeResponse({
-        definitions: [createMockLocation()],
-        quickinfo: {},
-      })
+    it('should return true (proceed) when quickinfo returns undefined', async () => {
+      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
 
       const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
 
@@ -91,15 +87,8 @@ describe('TypeScriptServerProbe', () => {
     })
 
     it('should return true (proceed) when quickinfo throws error', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-        if (command === 'vscode.executeDefinitionProvider') {
-          return [createMockLocation()]
-        }
-        if (command === 'typescript.tsserverRequest') {
-          throw new Error('No Project')
-        }
-        return null
-      })
+      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+      vi.mocked(languageService.requestQuickInfo).mockRejectedValue(new Error('No Project'))
 
       const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
 
@@ -113,19 +102,18 @@ describe('TypeScriptServerProbe', () => {
 
     it('should poll and return true when tsserver becomes ready after several attempts', async () => {
       let attempt = 0
-      vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-        if (command === 'vscode.executeDefinitionProvider') {
-          attempt++
-          // Return empty on first 3 attempts, then return definitions
-          if (attempt <= 3) {
-            return []
-          }
-          return [createMockLocation()]
+      vi.mocked(languageService.getDefinition).mockImplementation(async () => {
+        attempt++
+        // Return null on first 3 attempts, then return definition
+        if (attempt <= 3) {
+          return null
         }
-        if (command === 'typescript.tsserverRequest') {
-          return { body: { kind: 'function' } }
-        }
-        return null
+        return createDefinitionResult()
+      })
+      vi.mocked(languageService.requestQuickInfo).mockResolvedValue({
+        kind: 'function',
+        kindModifiers: '',
+        displayString: '',
       })
 
       const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
@@ -140,8 +128,6 @@ describe('TypeScriptServerProbe', () => {
     })
 
     it('should return false when cancelled via cancel()', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
-
       const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       // Let first check fail, then cancel during delay
@@ -154,15 +140,15 @@ describe('TypeScriptServerProbe', () => {
     })
 
     it('should auto-cancel previous call when called again with same key', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
-
       const firstPromise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
       await vi.advanceTimersByTimeAsync(0)
 
       // Second call with same key should cancel the first
-      mockProbeResponse({
-        definitions: [createMockLocation()],
-        quickinfo: { body: { kind: 'function' } },
+      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
+      vi.mocked(languageService.requestQuickInfo).mockResolvedValue({
+        kind: 'function',
+        kindModifiers: '',
+        displayString: '',
       })
       const secondPromise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
@@ -174,61 +160,29 @@ describe('TypeScriptServerProbe', () => {
     })
 
     it('should return true when definitions target has non-file URI', async () => {
-      mockProbeResponse({
-        definitions: [createMockLocation('git:///def.ts')],
-        quickinfo: null,
-      })
+      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('git:///def.ts'))
 
       const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       expect(result).toBe(true)
       // Should not call quickinfo for non-file URIs
-      expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(1)
+      expect(languageService.requestQuickInfo).not.toHaveBeenCalled()
     })
 
-    it('should handle LocationLink with targetSelectionRange', async () => {
-      const targetUri = vscode.Uri.parse('file:///linked.ts')
-      const targetRange = new vscode.Range(new vscode.Position(10, 0), new vscode.Position(10, 20))
-      const targetSelectionRange = new vscode.Range(new vscode.Position(10, 7), new vscode.Position(10, 12))
-
-      vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-        if (command === 'vscode.executeDefinitionProvider') {
-          return [{ targetUri, targetRange, targetSelectionRange }]
-        }
-        if (command === 'typescript.tsserverRequest') {
-          return { body: { kind: 'interface' } }
-        }
-        return null
-      })
-
-      const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
-
-      expect(result).toBe(true)
-      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('typescript.tsserverRequest', 'quickinfo', {
-        file: '/linked.ts',
-        line: 11,
-        offset: 8,
-      })
-    })
-
-    it('should call quickinfo with 1-based position from definition target', async () => {
-      mockProbeResponse({
-        definitions: [createMockLocation('file:///def.ts', 5, 4, 10)],
-        quickinfo: { body: { kind: 'function' } },
+    it('should call requestQuickInfo with 1-based position from definition target', async () => {
+      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('file:///def.ts', 5, 4, 10))
+      vi.mocked(languageService.requestQuickInfo).mockResolvedValue({
+        kind: 'function',
+        kindModifiers: '',
+        displayString: '',
       })
 
       await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
-      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('typescript.tsserverRequest', 'quickinfo', {
-        file: '/def.ts',
-        line: 6,
-        offset: 5,
-      })
+      expect(languageService.requestQuickInfo).toHaveBeenCalledWith('/def.ts', 6, 5)
     })
 
     it('should return true (proceed) when definitions provider returns null', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null)
-
       const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
 
       for (let i = 0; i < 19; i++) {
@@ -240,8 +194,6 @@ describe('TypeScriptServerProbe', () => {
     })
 
     it('should use custom timeout option', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
-
       const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 1_000 })
 
       // 1000ms / 500ms = 2 max attempts, so only 1 poll needed
@@ -252,8 +204,6 @@ describe('TypeScriptServerProbe', () => {
     })
 
     it('should clean up controllers on dispose', () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
-
       // Start a probe that will be pending
       probe.waitForReady('key-a', createMockDocument(), createMockPosition())
 

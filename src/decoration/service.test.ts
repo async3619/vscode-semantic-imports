@@ -5,11 +5,12 @@ import type { DocumentCache } from './types'
 import { SymbolKind } from '../symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '../symbol'
 import type { SymbolColorMap } from '../theme'
-import { TypeScriptServerProbe } from '../tsServer'
+import { TypeScriptLanguageService, TypeScriptServerProbe } from '../tsServer'
 import type { ImportStatement } from '../parser'
 import { TypeScriptParser } from '../parser'
 
 type ServiceInternals = {
+  languageService: TypeScriptLanguageService
   probe: TypeScriptServerProbe
   parser: TypeScriptParser
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
@@ -61,8 +62,8 @@ function createMockEditor(lines: string[]) {
   } as unknown as vscode.TextEditor
 }
 
-function createMockProbe() {
-  const probe = new TypeScriptServerProbe()
+function mockProbe(service: DecorationService) {
+  const probe = internals(service).probe
   vi.spyOn(probe, 'waitForReady').mockResolvedValue(true)
   vi.spyOn(probe, 'cancel')
   vi.spyOn(probe, 'dispose')
@@ -83,13 +84,12 @@ function stubAllResolvers() {
 
 describe('DecorationService', () => {
   let service: DecorationService
-  let mockProbe: TypeScriptServerProbe
+  let probe: TypeScriptServerProbe
 
   beforeEach(() => {
     vi.useFakeTimers()
-    mockProbe = createMockProbe()
-    service = new DecorationService(TEST_COLORS, mockProbe)
-    vi.mocked(vscode.commands.executeCommand).mockReset()
+    service = new DecorationService(TEST_COLORS)
+    probe = mockProbe(service)
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
 
     stubAllResolvers()
@@ -121,7 +121,7 @@ describe('DecorationService', () => {
         const editor = createMockEditor([])
         await service.applyImportDecorations(editor)
 
-        expect(vscode.commands.executeCommand).not.toHaveBeenCalled()
+        expect(probe.waitForReady).not.toHaveBeenCalled()
       })
 
       it('should find symbol occurrences and apply decorations', async () => {
@@ -311,7 +311,8 @@ describe('DecorationService', () => {
 
       it('should skip symbols whose kind has no color in the map', async () => {
         const partialColors: SymbolColorMap = { [SymbolKind.Function]: '#DCDCAA' }
-        service = new DecorationService(partialColors, mockProbe)
+        service = new DecorationService(partialColors)
+        mockProbe(service)
 
         mockParserReturn(service, [
           stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
@@ -331,7 +332,8 @@ describe('DecorationService', () => {
       })
 
       it('should not apply any decorations when colors map is empty', async () => {
-        service = new DecorationService({}, mockProbe)
+        service = new DecorationService({})
+        mockProbe(service)
 
         mockParserReturn(service, [
           stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
@@ -478,8 +480,8 @@ describe('DecorationService', () => {
         const editor = createMockEditor(["import { useState } from 'react'"])
         await service.applyImportDecorations(editor)
 
-        expect(mockProbe.waitForReady).toHaveBeenCalledOnce()
-        expect(mockProbe.waitForReady).toHaveBeenCalledWith(
+        expect(probe.waitForReady).toHaveBeenCalledOnce()
+        expect(probe.waitForReady).toHaveBeenCalledWith(
           editor.document.uri.toString(),
           editor.document,
           expect.objectContaining({ line: 0, character: 9 }),
@@ -502,7 +504,7 @@ describe('DecorationService', () => {
         const editor = createMockEditor([importLine])
         await service.applyImportDecorations(editor)
 
-        expect(mockProbe.waitForReady).not.toHaveBeenCalled()
+        expect(probe.waitForReady).not.toHaveBeenCalled()
       })
 
       it('should cancel previous probe when new decoration request arrives', async () => {
@@ -516,11 +518,11 @@ describe('DecorationService', () => {
         await service.applyImportDecorations(editor)
         await service.applyImportDecorations(editor)
 
-        expect(mockProbe.cancel).toHaveBeenCalledWith(editor.document.uri.toString())
+        expect(probe.cancel).toHaveBeenCalledWith(editor.document.uri.toString())
       })
 
       it('should return early when probe returns false (cancelled)', async () => {
-        vi.mocked(mockProbe.waitForReady).mockResolvedValue(false)
+        vi.mocked(probe.waitForReady).mockResolvedValue(false)
 
         mockParserReturn(service, [
           stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
@@ -536,7 +538,7 @@ describe('DecorationService', () => {
       it('should call probe.dispose on service dispose', () => {
         service.dispose()
 
-        expect(mockProbe.dispose).toHaveBeenCalledOnce()
+        expect(probe.dispose).toHaveBeenCalledOnce()
       })
     })
 

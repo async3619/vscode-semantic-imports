@@ -9,6 +9,19 @@ export type PluginRequest = ResolveRequest
 export interface ResolveResponse {
   id: 'resolve'
   isFunction: boolean
+  isClass: boolean
+  isInterface: boolean
+  isType: boolean
+  isEnum: boolean
+  isNamespace: boolean
+  isVariable: boolean
+  isNotReady: boolean
+  debug: {
+    symbolFlags: number
+    symbolName: string
+    wasAlias: boolean
+    aliasedFlags: number | null
+  }
 }
 
 export interface ErrorResponse {

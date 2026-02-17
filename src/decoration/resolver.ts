@@ -1,6 +1,7 @@
 import PQueue from 'p-queue'
 import * as vscode from 'vscode'
 import { Logger } from '../logger'
+import type { TypeScriptLanguageService } from '../tsServer'
 import { stopwatch } from '../utils/stopwatch'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '../symbol'
@@ -14,18 +15,21 @@ export interface ResolveTarget {
 
 export class SymbolResolver {
   private readonly logger = Logger.create(SymbolResolver)
-  private readonly resolvers: BaseSymbolResolver[] = [
-    new PluginSymbolResolver(),
-    new HoverSymbolResolver(),
-    new SemanticTokenSymbolResolver(),
-  ]
+  private readonly resolvers: BaseSymbolResolver[]
   private readonly _onPhase = new vscode.EventEmitter<Map<string, SymbolKind>>()
   readonly onPhase = this._onPhase.event
 
   constructor(
     private readonly document: vscode.TextDocument,
     private readonly targets: Map<string, ResolveTarget>,
-  ) {}
+    languageService: TypeScriptLanguageService,
+  ) {
+    this.resolvers = [
+      new PluginSymbolResolver(languageService),
+      new HoverSymbolResolver(languageService),
+      new SemanticTokenSymbolResolver(languageService),
+    ]
+  }
 
   async resolve() {
     const symbolKinds = new Map<string, SymbolKind>()
@@ -52,7 +56,7 @@ export class SymbolResolver {
 
   private async resolveSymbols(resolver: BaseSymbolResolver, symbols: string[]) {
     const queue = new PQueue({ concurrency: CONCURRENCY_LIMIT })
-    const promises: Promise<readonly [string, SymbolKind] | undefined | void>[] = []
+    const promises: Promise<readonly [string, SymbolKind] | null | void>[] = []
     for (const symbol of symbols) {
       const target = this.targets.get(symbol)
       if (!target) {
@@ -81,9 +85,10 @@ export class SymbolResolver {
 
   private async resolveSymbol(resolver: BaseSymbolResolver, symbol: string, position: vscode.Position, label: string) {
     this.logger.debug(`resolving ${label} via '${resolver.name}' resolver`)
+
     const [kind, elapsed] = await stopwatch(() => resolver.resolve(this.document, position))
     if (!kind) {
-      return
+      return null
     }
 
     this.logger.info(`resolved ${label} → '${kind}' via '${resolver.name}' resolver (in ${elapsed}ms)`)
