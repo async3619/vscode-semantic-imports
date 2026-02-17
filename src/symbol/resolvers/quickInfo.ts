@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
-import { BaseSymbolResolver } from '../types'
-import { toSymbolKind } from '../utils/toSymbolKind'
+import { BaseSymbolResolver } from '@/symbol/types'
+import { toSymbolKind } from '@/symbol/utils/toSymbolKind'
 
 export class QuickInfoSymbolResolver extends BaseSymbolResolver {
   readonly name = 'quickInfo'

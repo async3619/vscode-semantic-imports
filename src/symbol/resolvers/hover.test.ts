@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { TypeScriptServerNotLoadedError } from '../errors'
+import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
 import { HoverSymbolResolver } from './hover'
-import { SymbolKind } from '../types'
-import { loadTypeScript } from '../utils/loadTypeScript'
-import type { TypeScriptLanguageService } from '../../tsServer'
+import { SymbolKind } from '@/symbol/types'
+import { loadTypeScript } from '@/symbol/utils/loadTypeScript'
+import type { TypeScriptLanguageService } from '@/tsServer'
 
-vi.mock('../utils/loadTypeScript', () => ({
+vi.mock('@/symbol/utils/loadTypeScript', () => ({
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   loadTypeScript: vi.fn(() => require('typescript')),
 }))

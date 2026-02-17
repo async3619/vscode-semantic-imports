@@ -1,7 +1,7 @@
 import * as vscode from 'vscode'
 import { parse as parseJsonc } from 'jsonc-parser'
 import { parse as parsePlist } from 'fast-plist'
-import type { RawThemeData, ResolvedThemeData, TokenColorRule } from '../types'
+import type { RawThemeData, ResolvedThemeData, TokenColorRule } from '@/theme/types'
 
 const MAX_INCLUDE_DEPTH = 10
 

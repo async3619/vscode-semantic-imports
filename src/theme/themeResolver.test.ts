@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { SymbolKind } from '../symbol'
+import { SymbolKind } from '@/symbol'
 import { ThemeColorResolver } from './themeResolver'
 
 function mockReadFile(pathToContent: Record<string, string>) {

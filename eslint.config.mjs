@@ -34,6 +34,17 @@ const eslintConfig = defineConfig([
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/explicit-function-return-type': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../*'],
+              message: 'Use path alias (@/...) instead of relative parent imports.',
+            },
+          ],
+        },
+      ],
     },
   },
   prettierPlugin,

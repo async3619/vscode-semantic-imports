@@ -1,5 +1,5 @@
 import type * as vscode from 'vscode'
-import type { SymbolKind } from '../symbol'
+import type { SymbolKind } from '@/symbol'
 
 export interface DocumentCache {
   importSectionText: string

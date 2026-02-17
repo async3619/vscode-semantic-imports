@@ -50,6 +50,7 @@ const extensionOptions = {
   sourcemap: true,
   minify: !isWatch,
   keepNames: true,
+  alias: { '@': './src' },
   plugins: isWatch ? [watchPlugin] : [],
 }
 
@@ -65,6 +66,7 @@ const tsPluginOptions = {
   sourcemap: true,
   minify: !isWatch,
   keepNames: true,
+  alias: { '@': './src' },
   plugins: isWatch ? [watchPlugin, installTsPlugin] : [installTsPlugin],
 }
 

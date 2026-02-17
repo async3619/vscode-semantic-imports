@@ -1,7 +1,7 @@
 import * as vscode from 'vscode'
-import { RESPONSE_KEY, type PluginResponse } from '../../tsPlugin/protocol'
-import { TypeScriptServerNotLoadedError } from '../errors'
-import { SymbolKind, BaseSymbolResolver } from '../types'
+import { RESPONSE_KEY, type PluginResponse } from '@/tsPlugin/protocol'
+import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
+import { SymbolKind, BaseSymbolResolver } from '@/symbol/types'
 
 export class PluginSymbolResolver extends BaseSymbolResolver {
   readonly name = 'plugin'

@@ -1,5 +1,5 @@
-import { SymbolKind } from '../../symbol'
-import type { ResolvedThemeData, SymbolColorMap } from '../types'
+import { SymbolKind } from '@/symbol'
+import type { ResolvedThemeData, SymbolColorMap } from '@/theme/types'
 import { findSemanticTokenColor } from './findSemanticTokenColor'
 import { findTextMateColor } from './findTextMateColor'
 

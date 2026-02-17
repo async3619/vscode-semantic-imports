@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { DecorationService } from './service'
 import type { DocumentCache } from './types'
-import { SymbolKind, TypeScriptServerNotLoadedError } from '../symbol'
-import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '../symbol'
-import type { SymbolColorMap } from '../theme'
-import { TypeScriptLanguageService, TypeScriptServerProbe } from '../tsServer'
-import type { ImportStatement } from '../parser'
-import { TypeScriptParser } from '../parser'
+import { SymbolKind, TypeScriptServerNotLoadedError } from '@/symbol'
+import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '@/symbol'
+import type { SymbolColorMap } from '@/theme'
+import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/tsServer'
+import type { ImportStatement } from '@/parser'
+import { TypeScriptParser } from '@/parser'
 
 type ServiceInternals = {
   languageService: TypeScriptLanguageService

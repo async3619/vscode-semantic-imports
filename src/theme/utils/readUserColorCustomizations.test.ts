@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { SymbolKind } from '../../symbol'
+import { SymbolKind } from '@/symbol'
 import { readUserColorCustomizations } from './readUserColorCustomizations'
 
 function mockEditorConfig(settings: Record<string, unknown>) {

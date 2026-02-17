@@ -1,4 +1,4 @@
-import type { SymbolKind } from '../symbol'
+import type { SymbolKind } from '@/symbol'
 
 export interface TokenColorRule {
   scope?: string | string[]
