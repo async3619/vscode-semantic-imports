@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { DecorationService } from './service'
 import type { DocumentCache } from './types'
-import { SymbolKind } from '../symbol'
+import { SymbolKind, TypeScriptServerNotLoadedError } from '../symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '../symbol'
 import type { SymbolColorMap } from '../theme'
 import { TypeScriptLanguageService, TypeScriptServerProbe } from '../tsServer'
@@ -224,6 +224,41 @@ describe('DecorationService', () => {
         const editor = createMockEditor(["import { failing } from 'mod'"])
         await service.applyImportDecorations(editor)
 
+        expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
+      })
+
+      it('should retry symbols that fail with TypeScriptServerNotLoadedError', async () => {
+        mockParserReturn(service, [
+          stmt({ localName: 'clsx', source: 'clsx', startLine: 0, startColumn: 7, endLine: 0, endColumn: 11 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype)
+          .mockRejectedValueOnce(new TypeScriptServerNotLoadedError())
+          .mockResolvedValueOnce(SymbolKind.Function)
+
+        const editor = createMockEditor(["import clsx from 'clsx'"])
+        const promise = service.applyImportDecorations(editor)
+        await vi.advanceTimersByTimeAsync(500)
+        await promise
+
+        expect(spy).toHaveBeenCalledTimes(2)
+        expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
+          color: TEST_COLORS[SymbolKind.Function],
+        })
+      })
+
+      it('should give up retrying after max retry attempts', async () => {
+        mockParserReturn(service, [
+          stmt({ localName: 'clsx', source: 'clsx', startLine: 0, startColumn: 7, endLine: 0, endColumn: 11 }),
+        ])
+        const spy = spyResolve(PluginSymbolResolver.prototype).mockRejectedValue(new TypeScriptServerNotLoadedError())
+
+        const editor = createMockEditor(["import clsx from 'clsx'"])
+        const promise = service.applyImportDecorations(editor)
+        await vi.advanceTimersByTimeAsync(3000)
+        await promise
+
+        // 1 initial + 5 retries = 6 calls
+        expect(spy).toHaveBeenCalledTimes(6)
         expect(vscode.window.createTextEditorDecorationType).not.toHaveBeenCalled()
       })
 
