@@ -31,7 +31,6 @@ export class TypeScriptServerProbe implements vscode.Disposable {
     try {
       signal.throwIfAborted()
 
-      this.logger.info(`starting probe for ${document.uri.toString()}`)
       const ready = await this.check(document, position)
       if (ready) {
         return true
@@ -86,7 +85,6 @@ export class TypeScriptServerProbe implements vscode.Disposable {
 
   private async check(document: vscode.TextDocument, position: vscode.Position) {
     const definition = await this.languageService.getDefinition(document.uri, position)
-    this.logger.debug('probe: got definition:', definition)
     if (!definition) {
       this.logger.debug('probe: empty definitions')
       return false
