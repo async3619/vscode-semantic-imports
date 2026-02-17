@@ -58,7 +58,7 @@ const extensionOptions = {
 
 /** @type {import('esbuild').BuildOptions} */
 const tsPluginOptions = {
-  entryPoints: ['src/tsPlugin/index.ts'],
+  entryPoints: ['src/typescript/plugin/index.ts'],
   bundle: true,
   outfile: 'tsPlugin/index.js',
   external: ['typescript', 'typescript/lib/tsserverlibrary'],
