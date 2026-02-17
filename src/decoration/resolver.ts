@@ -3,10 +3,18 @@ import * as vscode from 'vscode'
 import { Logger } from '../logger'
 import type { TypeScriptLanguageService } from '../tsServer'
 import { stopwatch } from '../utils/stopwatch'
+import { withRetry } from '../utils/retry'
 import type { BaseSymbolResolver, SymbolKind } from '../symbol'
-import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '../symbol'
+import {
+  HoverSymbolResolver,
+  PluginSymbolResolver,
+  SemanticTokenSymbolResolver,
+  TypeScriptServerNotLoadedError,
+} from '../symbol'
 
 const CONCURRENCY_LIMIT = 5
+const RETRY_DELAY_MS = 500
+const MAX_RETRIES = 5
 
 export interface ResolveTarget {
   source: string
@@ -73,6 +81,12 @@ export class SymbolResolver {
     }
 
     const results = await Promise.allSettled(promises)
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        this.logger.error(`failed to resolve symbol via '${resolver.name}' resolver:`, result.reason)
+      }
+    }
+
     return new Map(
       results
         .filter(
@@ -86,7 +100,17 @@ export class SymbolResolver {
   private async resolveSymbol(resolver: BaseSymbolResolver, symbol: string, position: vscode.Position, label: string) {
     this.logger.debug(`resolving ${label} via '${resolver.name}' resolver`)
 
-    const [kind, elapsed] = await stopwatch(() => resolver.resolve(this.document, position))
+    const [kind, elapsed] = await stopwatch(() =>
+      withRetry(() => resolver.resolve(this.document, position), {
+        maxRetries: MAX_RETRIES,
+        delay: RETRY_DELAY_MS,
+        shouldRetry: (error) => error instanceof TypeScriptServerNotLoadedError,
+        onRetry: (attempt, max) => {
+          this.logger.info(`retrying ${label} via '${resolver.name}' resolver (attempt ${attempt}/${max})`)
+        },
+      }),
+    )
+
     if (!kind) {
       return null
     }
