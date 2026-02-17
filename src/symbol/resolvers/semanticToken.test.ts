@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { SemanticTokenSymbolResolver } from './semanticToken'
-import { SymbolKind } from '../types'
-import type { TypeScriptLanguageService, DefinitionResult } from '../../tsServer'
+import { SymbolKind } from '@/symbol/types'
+import type { TypeScriptLanguageService, DefinitionResult } from '@/tsServer'
 
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument

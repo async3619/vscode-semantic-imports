@@ -1,10 +1,10 @@
 import * as vscode from 'vscode'
-import { TypeScriptServerNotLoadedError } from '../errors'
-import { SymbolKind, BaseSymbolResolver } from '../types'
-import { extractContentText } from '../utils/extractContentText'
-import { isFunctionType } from '../utils/isFunctionType'
-import { loadTypeScript } from '../utils/loadTypeScript'
-import { toSymbolKind } from '../utils/toSymbolKind'
+import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
+import { SymbolKind, BaseSymbolResolver } from '@/symbol/types'
+import { extractContentText } from '@/symbol/utils/extractContentText'
+import { isFunctionType } from '@/symbol/utils/isFunctionType'
+import { loadTypeScript } from '@/symbol/utils/loadTypeScript'
+import { toSymbolKind } from '@/symbol/utils/toSymbolKind'
 
 const VARIABLE_KEYWORDS = new Set(['const', 'let', 'var'])
 const TYPE_EXTRACT_PATTERN = /\(alias\)\s+(?:const|let|var)\s+\S+\s*:\s*(.+)/

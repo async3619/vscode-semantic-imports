@@ -1,6 +1,6 @@
 import type * as vscode from 'vscode'
-import { Logger } from '../logger'
-import type { DefinitionResult, TypeScriptLanguageService } from '../tsServer'
+import { Logger } from '@/logger'
+import type { DefinitionResult, TypeScriptLanguageService } from '@/tsServer'
 import { TypeScriptServerNotLoadedError } from './errors'
 import { extractContentText } from './utils/extractContentText'
 

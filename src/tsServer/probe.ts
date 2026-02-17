@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import { Logger } from '../logger'
+import { Logger } from '@/logger'
 import type { TypeScriptLanguageService } from './languageService'
 
 const DEFAULT_TIMEOUT_MS = 10_000

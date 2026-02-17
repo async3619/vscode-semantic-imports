@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { TypeScriptServerNotLoadedError } from '../errors'
+import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
 import { PluginSymbolResolver } from './plugin'
-import { SymbolKind } from '../types'
-import { RESPONSE_KEY, type PluginResponse, type ResolveResponse } from '../../tsPlugin/protocol'
-import type { TypeScriptLanguageService, DefinitionResult } from '../../tsServer'
+import { SymbolKind } from '@/symbol/types'
+import { RESPONSE_KEY, type PluginResponse, type ResolveResponse } from '@/tsPlugin/protocol'
+import type { TypeScriptLanguageService, DefinitionResult } from '@/tsServer'
 
 const ALL_FALSE: Omit<ResolveResponse, 'id'> = {
   isFunction: false,

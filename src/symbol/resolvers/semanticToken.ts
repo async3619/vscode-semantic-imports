@@ -1,7 +1,7 @@
 import * as vscode from 'vscode'
-import { BaseSymbolResolver } from '../types'
-import { findTokenTypeAtPosition } from '../utils/findTokenTypeAtPosition'
-import { toSymbolKind } from '../utils/toSymbolKind'
+import { BaseSymbolResolver } from '@/symbol/types'
+import { findTokenTypeAtPosition } from '@/symbol/utils/findTokenTypeAtPosition'
+import { toSymbolKind } from '@/symbol/utils/toSymbolKind'
 
 export class SemanticTokenSymbolResolver extends BaseSymbolResolver {
   readonly name = 'semanticToken'
