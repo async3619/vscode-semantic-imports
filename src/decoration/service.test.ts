@@ -17,6 +17,7 @@ type ServiceInternals = {
   parser: TypeScriptParser
   decorationTypes: Map<string, vscode.TextEditorDecorationType>
   documentCaches: Map<string, DocumentCache>
+  activeResolvers: Map<string, SymbolResolver>
   colors: SymbolColorMap
   getDecorationType: (color: string) => vscode.TextEditorDecorationType
 }
@@ -588,6 +589,166 @@ describe('DecorationService', () => {
         service.dispose()
 
         expect(probe.dispose).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe('stale result prevention', () => {
+      it('should ignore stale resolver results when a newer request has started', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        let resolveFirst!: (value: SymbolKind | undefined) => void
+        const firstPromise = new Promise<SymbolKind | undefined>((resolve) => {
+          resolveFirst = resolve
+        })
+        let callCount = 0
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async () => {
+          callCount++
+          if (callCount === 1) {
+            return firstPromise
+          }
+          return SymbolKind.Class
+        })
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+
+        // Start first (slow) request
+        const first = service.applyImportDecorations(editor)
+
+        // Wait for first request to reach resolver
+        await new Promise((r) => setTimeout(r, 10))
+
+        // Start second (fast) request — this replaces the active resolver
+        const second = service.applyImportDecorations(editor)
+        await second
+
+        // Now resolve the first (stale) request
+        vi.mocked(editor.setDecorations).mockClear()
+        resolveFirst(SymbolKind.Function)
+        await first
+
+        // Stale result should NOT have applied decorations after the second request completed
+        const applyCalls = vi
+          .mocked(editor.setDecorations)
+          .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(applyCalls).toHaveLength(0)
+      })
+
+      it('should not update cache from stale resolver', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        let resolveFirst!: (value: SymbolKind | undefined) => void
+        const firstPromise = new Promise<SymbolKind | undefined>((resolve) => {
+          resolveFirst = resolve
+        })
+        let callCount = 0
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async () => {
+          callCount++
+          if (callCount === 1) {
+            return firstPromise
+          }
+          return SymbolKind.Class
+        })
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        const docUri = editor.document.uri.toString()
+
+        const first = service.applyImportDecorations(editor)
+        await new Promise((r) => setTimeout(r, 10))
+
+        const second = service.applyImportDecorations(editor)
+        await second
+
+        const cacheAfterSecond = internals(service).documentCaches.get(docUri)
+        expect(cacheAfterSecond!.symbolKinds.get('useState')).toBe(SymbolKind.Class)
+
+        // Stale resolve should not overwrite the cache
+        resolveFirst(SymbolKind.Function)
+        await first
+
+        const cacheAfterFirst = internals(service).documentCaches.get(docUri)
+        expect(cacheAfterFirst!.symbolKinds.get('useState')).toBe(SymbolKind.Class)
+      })
+
+      it('should ignore stale onPhase events', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
+        ])
+
+        let resolvePlugin!: (value: SymbolKind | undefined) => void
+        const pluginPromise = new Promise<SymbolKind | undefined>((resolve) => {
+          resolvePlugin = resolve
+        })
+        let callCount = 0
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async () => {
+          callCount++
+          if (callCount === 1) {
+            return pluginPromise
+          }
+          return undefined
+        })
+
+        const editor = createMockEditor(["import { myFn } from 'mod'"])
+
+        const first = service.applyImportDecorations(editor)
+        await new Promise((r) => setTimeout(r, 10))
+
+        // Second request starts — first resolver is now stale
+        const second = service.applyImportDecorations(editor)
+        await second
+
+        // First resolver's onPhase fires — should be ignored
+        vi.mocked(editor.setDecorations).mockClear()
+        resolvePlugin(SymbolKind.Function)
+        await first
+
+        const applyCalls = vi
+          .mocked(editor.setDecorations)
+          .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(applyCalls).toHaveLength(0)
+      })
+
+      it('should invalidate active resolver on clearDocumentCache', async () => {
+        vi.useRealTimers()
+
+        mockParserReturn(service, [
+          stmt({ localName: 'useState', source: 'react', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
+        ])
+
+        let resolvePlugin!: (value: SymbolKind | undefined) => void
+        spyResolve(PluginSymbolResolver.prototype).mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolvePlugin = resolve
+            }),
+        )
+
+        const editor = createMockEditor(["import { useState } from 'react'"])
+        const docUri = editor.document.uri.toString()
+
+        const promise = service.applyImportDecorations(editor)
+        await new Promise((r) => setTimeout(r, 10))
+
+        service.clearDocumentCache(docUri)
+        expect(internals(service).activeResolvers.has(docUri)).toBe(false)
+
+        vi.mocked(editor.setDecorations).mockClear()
+        resolvePlugin(SymbolKind.Function)
+        await promise
+
+        const applyCalls = vi
+          .mocked(editor.setDecorations)
+          .mock.calls.filter((call) => Array.isArray(call[1]) && call[1].length > 0)
+        expect(applyCalls).toHaveLength(0)
       })
     })
 

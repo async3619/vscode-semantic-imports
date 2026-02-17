@@ -26,6 +26,7 @@ export class DecorationService implements vscode.Disposable {
   private readonly logger = Logger.create(DecorationService)
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
+  private readonly activeResolvers = new Map<string, SymbolResolver>()
   private colors: SymbolColorMap = {}
 
   constructor(
@@ -72,7 +73,14 @@ export class DecorationService implements vscode.Disposable {
     }
 
     const resolver = this.createSymbolResolver(document, targetsToResolve, this.languageService)
+    this.activeResolvers.set(docUri, resolver)
+
+    const isStale = () => this.activeResolvers.get(docUri) !== resolver
+
     resolver.onPhase((phaseKinds) => {
+      if (isStale()) {
+        return
+      }
       for (const [symbol, kind] of phaseKinds) {
         symbolKinds.set(symbol, kind)
       }
@@ -80,6 +88,10 @@ export class DecorationService implements vscode.Disposable {
     })
 
     const resolved = await resolver.resolve()
+
+    if (isStale()) {
+      return
+    }
 
     for (const [symbol, kind] of resolved) {
       symbolKinds.set(symbol, kind)
@@ -92,15 +104,21 @@ export class DecorationService implements vscode.Disposable {
 
     this.applyDecorationsToEditor(editor, context.occurrences, symbolKinds)
     this.documentCaches.set(docUri, { importSectionText: context.importSectionText, symbolKinds: new Map(symbolKinds) })
+
+    if (!isStale()) {
+      this.activeResolvers.delete(docUri)
+    }
   }
 
   clearDocumentCache(uri: string) {
     this.probe.cancel(uri)
+    this.activeResolvers.delete(uri)
     this.documentCaches.delete(uri)
   }
 
   dispose() {
     this.probe.dispose()
+    this.activeResolvers.clear()
     for (const type of this.decorationTypes.values()) {
       type.dispose()
     }
