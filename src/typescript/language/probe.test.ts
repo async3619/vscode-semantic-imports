@@ -45,19 +45,14 @@ describe('TypeScriptServerProbe', () => {
   })
 
   describe('waitForReady', () => {
-    it('should return true immediately when tsserver is ready on first check', async () => {
+    it('should return true immediately when definition is resolved on first check', async () => {
       vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
-      vi.mocked(languageService.requestQuickInfo).mockResolvedValue({
-        kind: 'function',
-        kindModifiers: '',
-        displayString: '',
-      })
 
       const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       expect(result).toBe(true)
       expect(languageService.getDefinition).toHaveBeenCalledTimes(1)
-      expect(languageService.requestQuickInfo).toHaveBeenCalledTimes(1)
+      expect(languageService.requestQuickInfo).not.toHaveBeenCalled()
     })
 
     it('should return true (proceed) when definitions are empty after all attempts', async () => {
@@ -73,33 +68,6 @@ describe('TypeScriptServerProbe', () => {
       expect(result).toBe(true)
     })
 
-    it('should return true (proceed) when quickinfo returns undefined', async () => {
-      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
-
-      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
-
-      for (let i = 0; i < 19; i++) {
-        await vi.advanceTimersByTimeAsync(500)
-      }
-
-      const result = await promise
-      expect(result).toBe(true)
-    })
-
-    it('should return true (proceed) when quickinfo throws error', async () => {
-      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
-      vi.mocked(languageService.requestQuickInfo).mockRejectedValue(new Error('No Project'))
-
-      const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition(), { timeout: 10_000 })
-
-      for (let i = 0; i < 19; i++) {
-        await vi.advanceTimersByTimeAsync(500)
-      }
-
-      const result = await promise
-      expect(result).toBe(true)
-    })
-
     it('should poll and return true when tsserver becomes ready after several attempts', async () => {
       let attempt = 0
       vi.mocked(languageService.getDefinition).mockImplementation(async () => {
@@ -109,11 +77,6 @@ describe('TypeScriptServerProbe', () => {
           return null
         }
         return createDefinitionResult()
-      })
-      vi.mocked(languageService.requestQuickInfo).mockResolvedValue({
-        kind: 'function',
-        kindModifiers: '',
-        displayString: '',
       })
 
       const promise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
@@ -145,11 +108,6 @@ describe('TypeScriptServerProbe', () => {
 
       // Second call with same key should cancel the first
       vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
-      vi.mocked(languageService.requestQuickInfo).mockResolvedValue({
-        kind: 'function',
-        kindModifiers: '',
-        displayString: '',
-      })
       const secondPromise = probe.waitForReady('test-key', createMockDocument(), createMockPosition())
 
       await vi.advanceTimersByTimeAsync(500)
@@ -157,29 +115,6 @@ describe('TypeScriptServerProbe', () => {
       const [firstResult, secondResult] = await Promise.all([firstPromise, secondPromise])
       expect(firstResult).toBe(false) // cancelled
       expect(secondResult).toBe(true) // proceeded
-    })
-
-    it('should return true when definitions target has non-file URI', async () => {
-      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('git:///def.ts'))
-
-      const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
-
-      expect(result).toBe(true)
-      // Should not call quickinfo for non-file URIs
-      expect(languageService.requestQuickInfo).not.toHaveBeenCalled()
-    })
-
-    it('should call requestQuickInfo with 1-based position from definition target', async () => {
-      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('file:///def.ts', 5, 4, 10))
-      vi.mocked(languageService.requestQuickInfo).mockResolvedValue({
-        kind: 'function',
-        kindModifiers: '',
-        displayString: '',
-      })
-
-      await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
-
-      expect(languageService.requestQuickInfo).toHaveBeenCalledWith('/def.ts', 6, 5)
     })
 
     it('should return true (proceed) when definitions provider returns null', async () => {
@@ -201,19 +136,6 @@ describe('TypeScriptServerProbe', () => {
 
       const result = await promise
       expect(result).toBe(true)
-    })
-
-    it.each([
-      ['file:///node_modules/pkg/index.js', '.js'],
-      ['file:///node_modules/pkg/index.mjs', '.mjs'],
-      ['file:///node_modules/pkg/index.cjs', '.cjs'],
-    ])('should return true immediately for JS target %s without calling quickinfo', async (uri) => {
-      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult(uri))
-
-      const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
-
-      expect(result).toBe(true)
-      expect(languageService.requestQuickInfo).not.toHaveBeenCalled()
     })
 
     it('should clean up controllers on dispose', () => {
