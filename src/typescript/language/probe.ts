@@ -1,6 +1,7 @@
 import { injectable } from 'inversify'
 import * as vscode from 'vscode'
 import { Logger } from '@/logger'
+import { isJavaScriptFile } from '@/utils/isJavaScriptFile'
 import { TypeScriptLanguageService } from './languageService'
 
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -84,13 +85,17 @@ export class TypeScriptServerProbe implements vscode.Disposable {
 
   private async check(document: vscode.TextDocument, position: vscode.Position) {
     const definition = await this.languageService.getDefinition(document.uri, position)
-
     if (!definition) {
       this.logger.debug('probe: empty definitions')
       return false
     }
 
     if (definition.targetUri.scheme !== 'file') {
+      return true
+    }
+
+    if (isJavaScriptFile(definition.targetUri.fsPath)) {
+      this.logger.debug('probe: skipping quickinfo for JS target:', definition.targetUri.fsPath)
       return true
     }
 

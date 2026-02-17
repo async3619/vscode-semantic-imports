@@ -24,8 +24,19 @@ interface QuickInfoResponse {
 @injectable()
 export class TypeScriptLanguageService {
   async getDefinition(uri: vscode.Uri, position: vscode.Position): Promise<DefinitionResult | null> {
+    return (
+      (await this.executeDefinitionCommand('vscode.executeTypeDefinitionProvider', uri, position)) ??
+      (await this.executeDefinitionCommand('vscode.executeDefinitionProvider', uri, position))
+    )
+  }
+
+  private async executeDefinitionCommand(
+    command: string,
+    uri: vscode.Uri,
+    position: vscode.Position,
+  ): Promise<DefinitionResult | null> {
     const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
-      'vscode.executeDefinitionProvider',
+      command,
       uri,
       position,
     )

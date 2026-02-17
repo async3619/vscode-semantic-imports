@@ -203,6 +203,19 @@ describe('TypeScriptServerProbe', () => {
       expect(result).toBe(true)
     })
 
+    it.each([
+      ['file:///node_modules/pkg/index.js', '.js'],
+      ['file:///node_modules/pkg/index.mjs', '.mjs'],
+      ['file:///node_modules/pkg/index.cjs', '.cjs'],
+    ])('should return true immediately for JS target %s without calling quickinfo', async (uri) => {
+      vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult(uri))
+
+      const result = await probe.waitForReady('test-key', createMockDocument(), createMockPosition())
+
+      expect(result).toBe(true)
+      expect(languageService.requestQuickInfo).not.toHaveBeenCalled()
+    })
+
     it('should clean up controllers on dispose', () => {
       // Start a probe that will be pending
       probe.waitForReady('key-a', createMockDocument(), createMockPosition())
