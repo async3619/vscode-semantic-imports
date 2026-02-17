@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { SemanticTokenSymbolResolver } from './semanticToken'
 import { SymbolKind } from '../types'
+import type { TypeScriptLanguageService, DefinitionResult } from '../../tsServer'
 
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument
@@ -11,11 +12,10 @@ function createMockPosition(line = 0, character = 0) {
   return new vscode.Position(line, character)
 }
 
-function createMockLocation(uri = 'file:///def.ts', line = 0, character = 0, endCharacter = 3) {
-  return {
-    uri: vscode.Uri.parse(uri),
-    range: new vscode.Range(new vscode.Position(line, character), new vscode.Position(line, endCharacter)),
-  } as vscode.Location
+function createDefinitionResult(uri = 'file:///def.ts', line = 0, character = 0, endCharacter = 3): DefinitionResult {
+  const targetUri = vscode.Uri.parse(uri)
+  const targetRange = new vscode.Range(new vscode.Position(line, character), new vscode.Position(line, endCharacter))
+  return { targetUri, targetRange, targetPos: targetRange.start }
 }
 
 const DEFAULT_LEGEND: vscode.SemanticTokensLegend = {
@@ -37,62 +37,35 @@ function createTokenData(tokens: Array<[line: number, char: number, length: numb
   return new Uint32Array(data)
 }
 
-function mockSemanticTokenResolution(options: {
-  definitions?: vscode.Location[] | null
-  legend?: vscode.SemanticTokensLegend | null
-  tokens?: { data: Uint32Array } | null
-}) {
-  vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-    if (command === 'vscode.executeDefinitionProvider') {
-      return options.definitions ?? null
-    }
-    if (command === 'vscode.provideDocumentSemanticTokensLegend') {
-      return options.legend ?? null
-    }
-    if (command === 'vscode.provideDocumentSemanticTokens') {
-      return options.tokens ?? null
-    }
-    return null
-  })
+function createMockLanguageService(overrides?: Partial<TypeScriptLanguageService>): TypeScriptLanguageService {
+  return {
+    getDefinition: vi.fn().mockResolvedValue(null),
+    getHovers: vi.fn().mockResolvedValue([]),
+    requestCompletionInfo: vi.fn().mockResolvedValue(undefined),
+    requestQuickInfo: vi.fn().mockResolvedValue(undefined),
+    getSemanticTokens: vi.fn().mockResolvedValue(null),
+    openTextDocument: vi.fn().mockResolvedValue({}),
+    ...overrides,
+  } as unknown as TypeScriptLanguageService
 }
 
 describe('SemanticTokenSymbolResolver', () => {
   let resolver: SemanticTokenSymbolResolver
+  let languageService: TypeScriptLanguageService
 
   beforeEach(() => {
-    resolver = new SemanticTokenSymbolResolver()
-    vi.mocked(vscode.commands.executeCommand).mockReset()
-    vi.mocked(vscode.workspace.openTextDocument).mockClear()
+    languageService = createMockLanguageService()
+    resolver = new SemanticTokenSymbolResolver(languageService)
   })
 
   it('should return undefined when definition provider returns null', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null)
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
-  it('should return undefined when definition provider returns empty array', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
-    const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBeUndefined()
-  })
+  it('should return undefined when semantic tokens are null', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult())
 
-  it('should return undefined when semantic tokens legend is null', async () => {
-    mockSemanticTokenResolution({
-      definitions: [createMockLocation()],
-      legend: null,
-      tokens: { data: new Uint32Array([0, 0, 3, 0, 0]) },
-    })
-    const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBeUndefined()
-  })
-
-  it('should return undefined when semantic tokens data is null', async () => {
-    mockSemanticTokenResolution({
-      definitions: [createMockLocation()],
-      legend: DEFAULT_LEGEND,
-      tokens: null,
-    })
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
@@ -111,100 +84,47 @@ describe('SemanticTokenSymbolResolver', () => {
     for (const [tokenType, expected] of kinds) {
       it(`should resolve "${tokenType}" semantic token to ${expected}`, async () => {
         const typeIndex = DEFAULT_LEGEND.tokenTypes.indexOf(tokenType)
-        mockSemanticTokenResolution({
-          definitions: [createMockLocation('file:///def.ts', 0, 0, 3)],
+        vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('file:///def.ts', 0, 0, 3))
+        vi.mocked(languageService.getSemanticTokens).mockResolvedValue({
           legend: DEFAULT_LEGEND,
-          tokens: { data: new Uint32Array([0, 0, 3, typeIndex, 0]) },
+          tokens: { data: new Uint32Array([0, 0, 3, typeIndex, 0]) } as vscode.SemanticTokens,
         })
+
         const result = await resolver.resolve(createMockDocument(), createMockPosition())
         expect(result).toBe(expected)
       })
     }
   })
 
-  it('should call executeDefinitionProvider with correct arguments', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
+  it('should call getDefinition with correct arguments', async () => {
     const doc = createMockDocument('file:///my-file.ts')
     const pos = createMockPosition(5, 10)
 
     await resolver.resolve(doc, pos)
 
-    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('vscode.executeDefinitionProvider', doc.uri, pos)
+    expect(languageService.getDefinition).toHaveBeenCalledWith(doc.uri, pos)
   })
 
-  it('should handle Location with uri and range', async () => {
-    const defUri = vscode.Uri.parse('file:///def.ts')
-    const defRange = new vscode.Range(new vscode.Position(5, 4), new vscode.Position(5, 10))
-
-    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-      if (command === 'vscode.executeDefinitionProvider') {
-        return [{ uri: defUri, range: defRange }]
-      }
-      if (command === 'vscode.provideDocumentSemanticTokensLegend') {
-        return DEFAULT_LEGEND
-      }
-      if (command === 'vscode.provideDocumentSemanticTokens') {
-        return { data: createTokenData([[5, 4, 6, 6]]) }
-      }
-      return null
+  it('should handle definition at specific position', async () => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('file:///def.ts', 5, 4, 10))
+    vi.mocked(languageService.getSemanticTokens).mockResolvedValue({
+      legend: DEFAULT_LEGEND,
+      tokens: { data: createTokenData([[5, 4, 6, 6]]) } as vscode.SemanticTokens,
     })
 
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBe(SymbolKind.Function)
   })
 
-  it('should handle LocationLink with targetUri and targetSelectionRange', async () => {
-    const targetUri = vscode.Uri.parse('file:///linked.ts')
-    const targetRange = new vscode.Range(new vscode.Position(10, 0), new vscode.Position(10, 20))
-    const targetSelectionRange = new vscode.Range(new vscode.Position(10, 7), new vscode.Position(10, 12))
-
-    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-      if (command === 'vscode.executeDefinitionProvider') {
-        return [{ targetUri, targetRange, targetSelectionRange }]
-      }
-      if (command === 'vscode.provideDocumentSemanticTokensLegend') {
-        return DEFAULT_LEGEND
-      }
-      if (command === 'vscode.provideDocumentSemanticTokens') {
-        return { data: createTokenData([[10, 7, 5, 2]]) }
-      }
-      return null
-    })
-
-    const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBe(SymbolKind.Class)
-  })
-
-  it('should fall back to targetRange when targetSelectionRange is absent', async () => {
-    const targetUri = vscode.Uri.parse('file:///linked.ts')
-    const targetRange = new vscode.Range(new vscode.Position(3, 0), new vscode.Position(3, 8))
-
-    vi.mocked(vscode.commands.executeCommand).mockImplementation(async (command: string) => {
-      if (command === 'vscode.executeDefinitionProvider') {
-        return [{ targetUri, targetRange }]
-      }
-      if (command === 'vscode.provideDocumentSemanticTokensLegend') {
-        return DEFAULT_LEGEND
-      }
-      if (command === 'vscode.provideDocumentSemanticTokens') {
-        return { data: createTokenData([[3, 0, 8, 4]]) }
-      }
-      return null
-    })
-
-    const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBe(SymbolKind.Interface)
-  })
-
   it('should open target document before querying semantic tokens', async () => {
-    mockSemanticTokenResolution({
-      definitions: [createMockLocation('file:///def.ts', 0, 0, 3)],
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('file:///def.ts', 0, 0, 3))
+    vi.mocked(languageService.getSemanticTokens).mockResolvedValue({
       legend: DEFAULT_LEGEND,
-      tokens: { data: new Uint32Array([0, 0, 3, 6, 0]) },
+      tokens: { data: new Uint32Array([0, 0, 3, 6, 0]) } as vscode.SemanticTokens,
     })
 
     await resolver.resolve(createMockDocument(), createMockPosition())
 
-    expect(vscode.workspace.openTextDocument).toHaveBeenCalled()
+    expect(languageService.openTextDocument).toHaveBeenCalled()
   })
 })

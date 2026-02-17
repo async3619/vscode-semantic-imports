@@ -1,51 +1,30 @@
 import * as vscode from 'vscode'
-import { Logger } from '../../logger'
 import { BaseSymbolResolver } from '../types'
 import { toSymbolKind } from '../utils/toSymbolKind'
 
-interface QuickInfoResponse {
-  body?: {
-    kind: string
-    kindModifiers: string
-    displayString: string
-  }
-}
-
 export class QuickInfoSymbolResolver extends BaseSymbolResolver {
-  private readonly logger = Logger.create(QuickInfoSymbolResolver)
   readonly name = 'quickInfo'
 
   async resolve(document: vscode.TextDocument, position: vscode.Position) {
-    const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
-      'vscode.executeDefinitionProvider',
-      document.uri,
-      position,
+    const definition = await this.getDefinition(document, position)
+    if (!definition) {
+      return undefined
+    }
+
+    if (definition.targetUri.scheme !== 'file') {
+      return undefined
+    }
+
+    const body = await this.languageService.requestQuickInfo(
+      definition.targetUri.fsPath,
+      definition.targetPos.line + 1,
+      definition.targetPos.character + 1,
     )
 
-    if (!definitions || definitions.length === 0) {
+    if (!body?.kind) {
       return undefined
     }
 
-    const def = definitions[0]
-    const targetUri = 'targetUri' in def ? def.targetUri : def.uri
-    const targetRange = 'targetUri' in def ? (def.targetSelectionRange ?? def.targetRange) : def.range
-    const targetPos = targetRange.start
-
-    if (targetUri.scheme !== 'file') {
-      return undefined
-    }
-
-    const result = await vscode.commands.executeCommand<QuickInfoResponse>('typescript.tsserverRequest', 'quickinfo', {
-      file: targetUri.fsPath,
-      line: targetPos.line + 1,
-      offset: targetPos.character + 1,
-    })
-
-    const kind = result?.body?.kind
-    if (!kind) {
-      return undefined
-    }
-
-    return toSymbolKind(kind)
+    return toSymbolKind(body.kind)
   }
 }

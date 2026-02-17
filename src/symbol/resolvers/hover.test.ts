@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { TsServerLoadingError } from '../errors'
+import { TypeScriptServerNotLoadedError } from '../errors'
 import { HoverSymbolResolver } from './hover'
 import { SymbolKind } from '../types'
 import { loadTypeScript } from '../utils/loadTypeScript'
+import type { TypeScriptLanguageService } from '../../tsServer'
 
 vi.mock('../utils/loadTypeScript', () => ({
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -18,22 +19,28 @@ function createMockPosition(line = 0, character = 0) {
   return new vscode.Position(line, character)
 }
 
+function createMockLanguageService(overrides?: Partial<TypeScriptLanguageService>): TypeScriptLanguageService {
+  return {
+    getDefinition: vi.fn().mockResolvedValue(null),
+    getHovers: vi.fn().mockResolvedValue([]),
+    requestCompletionInfo: vi.fn().mockResolvedValue(undefined),
+    requestQuickInfo: vi.fn().mockResolvedValue(undefined),
+    getSemanticTokens: vi.fn().mockResolvedValue(null),
+    openTextDocument: vi.fn().mockResolvedValue({}),
+    ...overrides,
+  } as unknown as TypeScriptLanguageService
+}
+
 describe('HoverSymbolResolver', () => {
   let resolver: HoverSymbolResolver
+  let languageService: TypeScriptLanguageService
 
   beforeEach(() => {
-    resolver = new HoverSymbolResolver()
-    vi.mocked(vscode.commands.executeCommand).mockReset()
-  })
-
-  it('should return undefined when hover result is null', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null)
-    const result = await resolver.resolve(createMockDocument(), createMockPosition())
-    expect(result).toBeUndefined()
+    languageService = createMockLanguageService()
+    resolver = new HoverSymbolResolver(languageService)
   })
 
   it('should return undefined when hover result is empty array', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
@@ -50,8 +57,8 @@ describe('HoverSymbolResolver', () => {
 
     for (const [alias, expected] of directMappings) {
       it(`should resolve "${alias}" alias to ${expected}`, async () => {
-        vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-          { contents: [new vscode.MarkdownString(`(alias) ${alias} Foo`)] },
+        vi.mocked(languageService.getHovers).mockResolvedValue([
+          { contents: [new vscode.MarkdownString(`(alias) ${alias} Foo`)] } as vscode.Hover,
         ])
         const result = await resolver.resolve(createMockDocument(), createMockPosition())
         expect(result).toBe(expected)
@@ -62,8 +69,8 @@ describe('HoverSymbolResolver', () => {
 
     for (const alias of variableAliases) {
       it(`should resolve "${alias}" alias to Variable`, async () => {
-        vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-          { contents: [new vscode.MarkdownString(`(alias) ${alias} Foo`)] },
+        vi.mocked(languageService.getHovers).mockResolvedValue([
+          { contents: [new vscode.MarkdownString(`(alias) ${alias} Foo`)] } as vscode.Hover,
         ])
         const result = await resolver.resolve(createMockDocument(), createMockPosition())
         expect(result).toBe(SymbolKind.Variable)
@@ -71,8 +78,8 @@ describe('HoverSymbolResolver', () => {
     }
 
     it('should resolve "module" alias to Namespace', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(alias) module Foo')] },
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(alias) module Foo')] } as vscode.Hover,
       ])
       const result = await resolver.resolve(createMockDocument(), createMockPosition())
       expect(result).toBe(SymbolKind.Namespace)
@@ -80,52 +87,53 @@ describe('HoverSymbolResolver', () => {
   })
 
   it('should return undefined when hover has no alias pattern', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-      { contents: [new vscode.MarkdownString('(method) Array<T>.map(...)')] },
+    vi.mocked(languageService.getHovers).mockResolvedValue([
+      { contents: [new vscode.MarkdownString('(method) Array<T>.map(...)')] } as vscode.Hover,
     ])
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBeUndefined()
   })
 
   it('should check all contents in a hover until finding a match', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
+    vi.mocked(languageService.getHovers).mockResolvedValue([
       {
         contents: [new vscode.MarkdownString('no match here'), new vscode.MarkdownString('(alias) class MyClass')],
-      },
+      } as vscode.Hover,
     ])
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBe(SymbolKind.Class)
   })
 
   it('should check all hovers until finding a match', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-      { contents: [new vscode.MarkdownString('no match')] },
-      { contents: [new vscode.MarkdownString('(alias) interface IFoo')] },
+    vi.mocked(languageService.getHovers).mockResolvedValue([
+      { contents: [new vscode.MarkdownString('no match')] } as vscode.Hover,
+      { contents: [new vscode.MarkdownString('(alias) interface IFoo')] } as vscode.Hover,
     ])
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBe(SymbolKind.Interface)
   })
 
-  it('should call executeCommand with correct arguments', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([])
+  it('should call getHovers with correct arguments', async () => {
     const doc = createMockDocument('file:///my-file.ts')
     const pos = createMockPosition(5, 10)
 
     await resolver.resolve(doc, pos)
 
-    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('vscode.executeHoverProvider', doc.uri, pos)
+    expect(languageService.getHovers).toHaveBeenCalledWith(doc.uri, pos)
   })
 
   it('should handle MarkedString object with language and value', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-      { contents: [{ language: 'typescript', value: '(alias) function foo(): void' }] },
+    vi.mocked(languageService.getHovers).mockResolvedValue([
+      { contents: [{ language: 'typescript', value: '(alias) function foo(): void' }] } as vscode.Hover,
     ])
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBe(SymbolKind.Function)
   })
 
   it('should handle plain string content', async () => {
-    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([{ contents: ['(alias) const X: number'] }])
+    vi.mocked(languageService.getHovers).mockResolvedValue([
+      { contents: ['(alias) const X: number'] } as unknown as vscode.Hover,
+    ])
     const result = await resolver.resolve(createMockDocument(), createMockPosition())
     expect(result).toBe(SymbolKind.Variable)
   })
@@ -142,8 +150,8 @@ describe('HoverSymbolResolver', () => {
 
     for (const [typeText, description] of functionTypes) {
       it(`should resolve const with ${description} type to Function: "${typeText}"`, async () => {
-        vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-          { contents: [new vscode.MarkdownString(`(alias) const foo: ${typeText}`)] },
+        vi.mocked(languageService.getHovers).mockResolvedValue([
+          { contents: [new vscode.MarkdownString(`(alias) const foo: ${typeText}`)] } as vscode.Hover,
         ])
         const result = await resolver.resolve(createMockDocument(), createMockPosition())
         expect(result).toBe(SymbolKind.Function)
@@ -151,16 +159,16 @@ describe('HoverSymbolResolver', () => {
     }
 
     it('should resolve let with function type to Function', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(alias) let handler: () => void')] },
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(alias) let handler: () => void')] } as vscode.Hover,
       ])
       const result = await resolver.resolve(createMockDocument(), createMockPosition())
       expect(result).toBe(SymbolKind.Function)
     })
 
     it('should resolve var with function type to Function', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(alias) var handler: () => void')] },
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(alias) var handler: () => void')] } as vscode.Hover,
       ])
       const result = await resolver.resolve(createMockDocument(), createMockPosition())
       expect(result).toBe(SymbolKind.Function)
@@ -175,8 +183,8 @@ describe('HoverSymbolResolver', () => {
 
     for (const [typeText, description] of nonFunctionTypes) {
       it(`should resolve const with ${description} type to Variable: "${typeText}"`, async () => {
-        vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-          { contents: [new vscode.MarkdownString(`(alias) const foo: ${typeText}`)] },
+        vi.mocked(languageService.getHovers).mockResolvedValue([
+          { contents: [new vscode.MarkdownString(`(alias) const foo: ${typeText}`)] } as vscode.Hover,
         ])
         const result = await resolver.resolve(createMockDocument(), createMockPosition())
         expect(result).toBe(SymbolKind.Variable)
@@ -184,24 +192,24 @@ describe('HoverSymbolResolver', () => {
     }
 
     it('should return undefined for type alias (fallback to next resolver)', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(alias) const handler: MyCallback')] },
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(alias) const handler: MyCallback')] } as vscode.Hover,
       ])
       const result = await resolver.resolve(createMockDocument(), createMockPosition())
       expect(result).toBeUndefined()
     })
 
     it('should return undefined for typeof (fallback to next resolver)', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(alias) const foo: typeof someFunc')] },
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(alias) const foo: typeof someFunc')] } as vscode.Hover,
       ])
       const result = await resolver.resolve(createMockDocument(), createMockPosition())
       expect(result).toBeUndefined()
     })
 
     it('should return Variable when const has no type annotation', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(alias) const FOO')] },
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(alias) const FOO')] } as vscode.Hover,
       ])
       const result = await resolver.resolve(createMockDocument(), createMockPosition())
       expect(result).toBe(SymbolKind.Variable)
@@ -212,8 +220,8 @@ describe('HoverSymbolResolver', () => {
     it('should return undefined when loadTypeScript returns undefined', async () => {
       vi.mocked(loadTypeScript).mockReturnValueOnce(undefined as never)
 
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(alias) const foo: () => void')] },
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(alias) const foo: () => void')] } as vscode.Hover,
       ])
       const result = await resolver.resolve(createMockDocument(), createMockPosition())
       expect(result).toBeUndefined()
@@ -221,18 +229,22 @@ describe('HoverSymbolResolver', () => {
   })
 
   describe('tsserver loading detection', () => {
-    it('should throw TsServerLoadingError when hover text contains loading placeholder', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(loading...)')] },
+    it('should throw TypeScriptServerNotLoadedError when hover text contains loading placeholder', async () => {
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(loading...)')] } as vscode.Hover,
       ])
-      await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
+      await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(
+        TypeScriptServerNotLoadedError,
+      )
     })
 
-    it('should throw TsServerLoadingError when hover text contains loading in markdown', async () => {
-      vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
-        { contents: [new vscode.MarkdownString('(loading...)')] },
+    it('should throw TypeScriptServerNotLoadedError when hover text contains loading in markdown', async () => {
+      vi.mocked(languageService.getHovers).mockResolvedValue([
+        { contents: [new vscode.MarkdownString('(loading...)')] } as vscode.Hover,
       ])
-      await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(TsServerLoadingError)
+      await expect(resolver.resolve(createMockDocument(), createMockPosition())).rejects.toThrow(
+        TypeScriptServerNotLoadedError,
+      )
     })
   })
 })
