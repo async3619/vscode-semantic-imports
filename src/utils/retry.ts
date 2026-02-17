@@ -1,4 +1,4 @@
-interface RetryOptions {
+export interface RetryOptions {
   maxRetries: number
   delay: number
   shouldRetry: (error: unknown) => boolean
