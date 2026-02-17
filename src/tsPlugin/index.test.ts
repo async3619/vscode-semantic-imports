@@ -1,7 +1,30 @@
 import { describe, it, expect, vi } from 'vitest'
 import type tslib from 'typescript/lib/tsserverlibrary'
 import init from './index'
-import { RESPONSE_KEY, type PluginResponse } from './protocol'
+import { RESPONSE_KEY, type PluginResponse, type ResolveResponse } from './protocol'
+
+const SymbolFlags = {
+  Function: 1 << 4,
+  Class: 1 << 5,
+  Interface: 1 << 6,
+  Enum: 1 << 8,
+  TypeAlias: 1 << 17,
+  Alias: 1 << 18,
+  BlockScopedVariable: 1 << 1,
+  FunctionScopedVariable: 1 << 0,
+  NamespaceModule: 1 << 9,
+}
+
+const ALL_FALSE: Omit<ResolveResponse, 'id' | 'debug'> = {
+  isFunction: false,
+  isClass: false,
+  isInterface: false,
+  isType: false,
+  isEnum: false,
+  isNamespace: false,
+  isVariable: false,
+  isNotReady: false,
+}
 
 function createMockLanguageService(overrides: Partial<tslib.LanguageService> = {}) {
   const ls: Partial<tslib.LanguageService> = {
@@ -16,10 +39,9 @@ function createMockPluginCreateInfo(ls: tslib.LanguageService) {
   return { languageService: ls } as tslib.server.PluginCreateInfo
 }
 
-function createMockType(callSignatures = 0, constructSignatures = 0) {
+function createMockType(callSignatures = 0) {
   return {
     getCallSignatures: () => Array(callSignatures).fill({}),
-    getConstructSignatures: () => Array(constructSignatures).fill({}),
   }
 }
 
@@ -33,15 +55,21 @@ describe('tsPlugin', () => {
     program?: {
       sourceFile?: { getStart: () => number; getEnd: () => number }
       type?: ReturnType<typeof createMockType>
-      symbol?: object | undefined
+      symbol?: { flags: number; getName?: () => string } | undefined
+      aliasedSymbol?: { flags: number; getName?: () => string }
     }
   }) {
-    const mockSymbol = 'symbol' in (options.program ?? {}) ? options.program!.symbol : {}
+    const defaultGetName = () => 'testSymbol'
+    const rawSymbol = 'symbol' in (options.program ?? {}) ? options.program!.symbol : { flags: 0 }
+    const mockSymbol = rawSymbol ? { getName: defaultGetName, ...rawSymbol } : rawSymbol
+    const rawAliased = options.program?.aliasedSymbol
+    const mockAliasedSymbol = rawAliased ? { getName: defaultGetName, ...rawAliased } : rawAliased
     const mockType = options.program?.type ?? createMockType()
 
     const mockTypeChecker = {
       getSymbolAtLocation: vi.fn(() => mockSymbol),
       getTypeOfSymbolAtLocation: vi.fn(() => mockType),
+      getAliasedSymbol: vi.fn(() => mockAliasedSymbol),
     }
 
     const mockSourceFile = options.program?.sourceFile ?? {
@@ -62,6 +90,7 @@ describe('tsPlugin', () => {
     })
 
     const mockTs = {
+      SymbolFlags,
       forEachChild: vi.fn((node: { children?: tslib.Node[] }, cb: (child: tslib.Node) => void) => {
         if (node.children) {
           for (const child of node.children) {
@@ -77,6 +106,12 @@ describe('tsPlugin', () => {
     return { proxy, ls, mockTypeChecker }
   }
 
+  function resolve(proxy: tslib.LanguageService) {
+    return proxy.getCompletionsAtPosition('test.ts', 0, {
+      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    })
+  }
+
   it('should pass through when triggerCharacter is undefined', () => {
     const { proxy, ls } = setupPlugin({ completions: undefined })
     proxy.getCompletionsAtPosition('test.ts', 0, undefined)
@@ -90,102 +125,205 @@ describe('tsPlugin', () => {
     expect(ls.getCompletionsAtPosition).toHaveBeenCalledWith('test.ts', 0, options, undefined)
   })
 
-  it('should return resolve response with isFunction=true when type has call signatures', () => {
-    const { proxy } = setupPlugin({
-      program: { type: createMockType(1, 0) },
+  describe('symbol kind resolution', () => {
+    it('should resolve Function symbol', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.Function } },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isFunction: true })
     })
 
-    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
-      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    it('should resolve Class symbol', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.Class } },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isClass: true })
     })
 
-    const response = getResponse(result)
-    expect(response).toEqual({ id: 'resolve', isFunction: true })
+    it('should resolve Interface symbol', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.Interface } },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isInterface: true })
+    })
+
+    it('should resolve TypeAlias symbol', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.TypeAlias } },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isType: true })
+    })
+
+    it('should resolve Enum symbol', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.Enum } },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isEnum: true })
+    })
+
+    it('should resolve NamespaceModule symbol', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.NamespaceModule } },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isNamespace: true })
+    })
+
+    it('should resolve BlockScopedVariable with call signatures as function', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.BlockScopedVariable }, type: createMockType(1) },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isFunction: true })
+    })
+
+    it('should resolve BlockScopedVariable without call signatures as variable', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.BlockScopedVariable }, type: createMockType(0) },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isVariable: true })
+    })
+
+    it('should resolve FunctionScopedVariable with call signatures as function', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.FunctionScopedVariable }, type: createMockType(1) },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isFunction: true })
+    })
+
+    it('should return all false for unrecognized symbol flags', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: 0 } },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE })
+    })
   })
 
-  it('should return resolve response with isFunction=false when type has only construct signatures', () => {
-    const { proxy } = setupPlugin({
-      program: { type: createMockType(0, 1) },
+  describe('alias resolution', () => {
+    it('should resolve alias to the aliased symbol', () => {
+      const { proxy, mockTypeChecker } = setupPlugin({
+        program: {
+          symbol: { flags: SymbolFlags.Alias },
+          aliasedSymbol: { flags: SymbolFlags.Function },
+        },
+      })
+      const response = getResponse(resolve(proxy))
+      expect(mockTypeChecker.getAliasedSymbol).toHaveBeenCalled()
+      expect(response).toMatchObject({ id: 'resolve', ...ALL_FALSE, isFunction: true })
     })
 
-    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
-      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    it('should resolve alias to class', () => {
+      const { proxy } = setupPlugin({
+        program: {
+          symbol: { flags: SymbolFlags.Alias },
+          aliasedSymbol: { flags: SymbolFlags.Class },
+        },
+      })
+      expect(getResponse(resolve(proxy))).toMatchObject({ id: 'resolve', ...ALL_FALSE, isClass: true })
     })
 
-    const response = getResponse(result)
-    expect(response).toEqual({ id: 'resolve', isFunction: false })
+    it('should not call getAliasedSymbol when symbol is not an alias', () => {
+      const { proxy, mockTypeChecker } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.Function } },
+      })
+      resolve(proxy)
+      expect(mockTypeChecker.getAliasedSymbol).not.toHaveBeenCalled()
+    })
   })
 
-  it('should return resolve response with isFunction=false when type has no signatures', () => {
-    const { proxy } = setupPlugin({
-      program: { type: createMockType(0, 0) },
+  describe('debug info', () => {
+    it('should include debug info with symbol flags and name', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: { flags: SymbolFlags.Function, getName: () => 'myFunc' } },
+      })
+      const response = getResponse(resolve(proxy))
+      expect(response).toMatchObject({
+        debug: { symbolFlags: SymbolFlags.Function, symbolName: 'myFunc', wasAlias: false, aliasedFlags: null },
+      })
     })
 
-    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
-      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+    it('should include alias debug info when symbol is aliased', () => {
+      const { proxy } = setupPlugin({
+        program: {
+          symbol: { flags: SymbolFlags.Alias, getName: () => 'originalName' },
+          aliasedSymbol: { flags: SymbolFlags.Class, getName: () => 'MyClass' },
+        },
+      })
+      const response = getResponse(resolve(proxy))
+      expect(response).toMatchObject({
+        debug: {
+          symbolFlags: SymbolFlags.Class,
+          symbolName: 'MyClass',
+          wasAlias: true,
+          aliasedFlags: SymbolFlags.Class,
+        },
+      })
     })
 
-    const response = getResponse(result)
-    expect(response).toEqual({ id: 'resolve', isFunction: false })
+    it('should set isNotReady when alias resolves to unknown', () => {
+      const { proxy } = setupPlugin({
+        program: {
+          symbol: { flags: SymbolFlags.Alias },
+          aliasedSymbol: { flags: 0, getName: () => 'unknown' },
+        },
+      })
+      const response = getResponse(resolve(proxy))
+      expect(response).toMatchObject({ isNotReady: true })
+    })
+
+    it('should not set isNotReady when alias resolves to a known symbol', () => {
+      const { proxy } = setupPlugin({
+        program: {
+          symbol: { flags: SymbolFlags.Alias },
+          aliasedSymbol: { flags: SymbolFlags.Function, getName: () => 'myFunc' },
+        },
+      })
+      const response = getResponse(resolve(proxy))
+      expect(response).toMatchObject({ isNotReady: false })
+    })
   })
 
-  it('should return error response when program is unavailable', () => {
-    const { proxy } = setupPlugin({})
-
-    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
-      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
+  describe('error handling', () => {
+    it('should return error response when program is unavailable', () => {
+      const { proxy } = setupPlugin({})
+      const response = getResponse(resolve(proxy))
+      expect(response).toMatchObject({ id: 'error', error: { message: 'no program' } })
     })
 
-    const response = getResponse(result)
-    expect(response).toMatchObject({ id: 'error', error: { message: 'no program' } })
-  })
-
-  it('should return error response when symbol is not found', () => {
-    const { proxy } = setupPlugin({
-      program: { symbol: undefined, type: createMockType(1, 0) },
+    it('should return error response when symbol is not found', () => {
+      const { proxy } = setupPlugin({
+        program: { symbol: undefined },
+      })
+      const response = getResponse(resolve(proxy))
+      expect(response).toMatchObject({ id: 'error', error: { message: 'no symbol' } })
     })
 
-    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
-      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
-    })
+    it('should catch exceptions and return error response', () => {
+      const ls = createMockLanguageService({
+        getCompletionsAtPosition: vi.fn(() => undefined),
+        getProgram: vi.fn(() => {
+          throw new Error('unexpected failure')
+        }) as tslib.LanguageService['getProgram'],
+      })
 
-    const response = getResponse(result)
-    expect(response).toMatchObject({ id: 'error', error: { message: 'no symbol' } })
+      const mockTs = { forEachChild: vi.fn(), SymbolFlags } as unknown as typeof tslib
+      const plugin = init({ typescript: mockTs })
+      const proxy = plugin.create(createMockPluginCreateInfo(ls))
+
+      const response = getResponse(resolve(proxy))
+      expect(response).toMatchObject({ id: 'error', error: { name: 'Error', message: 'unexpected failure' } })
+    })
   })
 
   it('should create fallback CompletionInfo when original returns undefined', () => {
     const { proxy } = setupPlugin({
       completions: undefined,
-      program: { type: createMockType(1, 0) },
+      program: { symbol: { flags: SymbolFlags.Function } },
     })
 
-    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
-      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
-    })
+    const result = resolve(proxy)
 
     expect(result).toBeDefined()
     expect(result!.entries).toEqual([])
-    expect(getResponse(result)).toEqual({ id: 'resolve', isFunction: true })
-  })
-
-  it('should catch exceptions and return error response', () => {
-    const ls = createMockLanguageService({
-      getCompletionsAtPosition: vi.fn(() => undefined),
-      getProgram: vi.fn(() => {
-        throw new Error('unexpected failure')
-      }) as tslib.LanguageService['getProgram'],
-    })
-
-    const mockTs = { forEachChild: vi.fn() } as unknown as typeof tslib
-    const plugin = init({ typescript: mockTs })
-    const proxy = plugin.create(createMockPluginCreateInfo(ls))
-
-    const result = proxy.getCompletionsAtPosition('test.ts', 0, {
-      triggerCharacter: { id: 'resolve' } as unknown as tslib.CompletionsTriggerCharacter,
-    })
-
-    const response = getResponse(result)
-    expect(response).toMatchObject({ id: 'error', error: { name: 'Error', message: 'unexpected failure' } })
+    expect(getResponse(result)).toMatchObject({ id: 'resolve', ...ALL_FALSE, isFunction: true })
   })
 
   it('should delegate non-overridden methods to original language service', () => {
@@ -194,7 +332,7 @@ describe('tsPlugin', () => {
       getDefinitionAtPosition: mockGetDefinitionAtPosition as tslib.LanguageService['getDefinitionAtPosition'],
     })
 
-    const mockTs = { forEachChild: vi.fn() } as unknown as typeof tslib
+    const mockTs = { forEachChild: vi.fn(), SymbolFlags } as unknown as typeof tslib
     const plugin = init({ typescript: mockTs })
     const proxy = plugin.create(createMockPluginCreateInfo(ls))
 

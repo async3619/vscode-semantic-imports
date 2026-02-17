@@ -3,7 +3,7 @@ import { TypeScriptParser } from '../parser'
 import type { SymbolKind } from '../symbol'
 import { Logger } from '../logger'
 import type { SymbolColorMap } from '../theme'
-import { TypeScriptServerProbe } from '../tsServer'
+import { TypeScriptLanguageService, TypeScriptServerProbe } from '../tsServer'
 import { SymbolResolver } from './resolver'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
@@ -14,15 +14,17 @@ interface DecorationContext {
 
 export class DecorationService implements vscode.Disposable {
   private readonly logger = Logger.create(DecorationService)
+  private readonly languageService: TypeScriptLanguageService
   private readonly probe: TypeScriptServerProbe
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
   private readonly parser = new TypeScriptParser()
   private colors: SymbolColorMap
 
-  constructor(colors: SymbolColorMap = {}, probe?: TypeScriptServerProbe) {
+  constructor(colors: SymbolColorMap = {}, languageService?: TypeScriptLanguageService) {
     this.colors = colors
-    this.probe = probe ?? new TypeScriptServerProbe()
+    this.languageService = languageService ?? new TypeScriptLanguageService()
+    this.probe = new TypeScriptServerProbe(this.languageService)
   }
 
   setColors(colors: SymbolColorMap) {
@@ -61,7 +63,7 @@ export class DecorationService implements vscode.Disposable {
       return
     }
 
-    const resolver = new SymbolResolver(document, targetsToResolve)
+    const resolver = new SymbolResolver(document, targetsToResolve, this.languageService)
     resolver.onPhase((phaseKinds) => {
       for (const [symbol, kind] of phaseKinds) {
         symbolKinds.set(symbol, kind)

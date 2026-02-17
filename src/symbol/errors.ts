@@ -1,6 +1,6 @@
-export class TsServerLoadingError extends Error {
+export class TypeScriptServerNotLoadedError extends Error {
   constructor() {
     super('tsserver is still loading')
-    this.name = 'TsServerLoadingError'
+    this.name = 'TypeScriptServerNotLoadedError'
   }
 }

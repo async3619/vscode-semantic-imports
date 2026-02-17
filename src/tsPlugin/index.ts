@@ -88,10 +88,38 @@ function handleResolve(ts: TypeScript, ls: tslib.LanguageService, fileName: stri
     return { id: 'error', error: { name: 'PluginError', message: 'no symbol' } }
   }
 
-  const type = typeChecker.getTypeOfSymbolAtLocation(symbol, node)
-  const isFunction = type.getCallSignatures().length > 0
+  const wasAlias = !!(symbol.flags & ts.SymbolFlags.Alias)
+  let resolved = symbol
+  if (wasAlias) {
+    resolved = typeChecker.getAliasedSymbol(resolved)
+  }
 
-  return { id: 'resolve', isFunction }
+  const flags = resolved.flags
+  const isVariable = !!(flags & (ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.FunctionScopedVariable))
+
+  let isCallable = false
+  if (isVariable) {
+    const type = typeChecker.getTypeOfSymbolAtLocation(resolved, node)
+    isCallable = type.getCallSignatures().length > 0
+  }
+
+  return {
+    id: 'resolve',
+    isFunction: !!(flags & ts.SymbolFlags.Function) || (isVariable && isCallable),
+    isClass: !!(flags & ts.SymbolFlags.Class),
+    isInterface: !!(flags & ts.SymbolFlags.Interface),
+    isType: !!(flags & ts.SymbolFlags.TypeAlias),
+    isEnum: !!(flags & ts.SymbolFlags.Enum),
+    isNamespace: !!(flags & ts.SymbolFlags.NamespaceModule),
+    isVariable: isVariable && !isCallable,
+    isNotReady: wasAlias && resolved.getName() === 'unknown',
+    debug: {
+      symbolFlags: flags,
+      symbolName: resolved.getName(),
+      wasAlias,
+      aliasedFlags: wasAlias ? flags : null,
+    },
+  }
 }
 
 function findTokenAtPosition(ts: TypeScript, sourceFile: tslib.SourceFile, position: number): tslib.Node | undefined {
