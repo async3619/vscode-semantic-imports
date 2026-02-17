@@ -1,3 +1,4 @@
+import { injectable } from 'inversify'
 import * as vscode from 'vscode'
 import { Logger } from '@/logger'
 import type { SymbolColorMap } from './types'
@@ -18,6 +19,7 @@ interface DiscoveredTheme {
   themeName: string
 }
 
+@injectable()
 export class ThemeColorResolver {
   private readonly logger = Logger.create(ThemeColorResolver)
 

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { DecorationService } from './service'
+import type { SymbolResolverFactory } from './service'
+import { SymbolResolver } from './resolver'
 import type { DocumentCache } from './types'
 import { SymbolKind, TypeScriptServerNotLoadedError } from '@/symbol'
 import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '@/symbol'
@@ -62,8 +64,17 @@ function createMockEditor(lines: string[]) {
   } as unknown as vscode.TextEditor
 }
 
-function mockProbe(service: DecorationService) {
-  const probe = internals(service).probe
+function createService(colors: SymbolColorMap = TEST_COLORS) {
+  const languageService = new TypeScriptLanguageService()
+  const probe = new TypeScriptServerProbe(languageService)
+  const parser = new TypeScriptParser()
+  const factory: SymbolResolverFactory = (doc, targets, ls) => new SymbolResolver(doc, targets, ls)
+  const service = new DecorationService(languageService, probe, parser, factory)
+  service.setColors(colors)
+  return { service, languageService, probe, parser }
+}
+
+function mockProbe(probe: TypeScriptServerProbe) {
   vi.spyOn(probe, 'waitForReady').mockResolvedValue(true)
   vi.spyOn(probe, 'cancel')
   vi.spyOn(probe, 'dispose')
@@ -88,8 +99,9 @@ describe('DecorationService', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
-    service = new DecorationService(TEST_COLORS)
-    probe = mockProbe(service)
+    const created = createService()
+    service = created.service
+    probe = mockProbe(created.probe)
     vi.mocked(vscode.window.createTextEditorDecorationType).mockClear()
 
     stubAllResolvers()
@@ -346,8 +358,9 @@ describe('DecorationService', () => {
 
       it('should skip symbols whose kind has no color in the map', async () => {
         const partialColors: SymbolColorMap = { [SymbolKind.Function]: '#DCDCAA' }
-        service = new DecorationService(partialColors)
-        mockProbe(service)
+        const created = createService(partialColors)
+        service = created.service
+        mockProbe(created.probe)
 
         mockParserReturn(service, [
           stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
@@ -367,8 +380,9 @@ describe('DecorationService', () => {
       })
 
       it('should not apply any decorations when colors map is empty', async () => {
-        service = new DecorationService({})
-        mockProbe(service)
+        const created = createService({})
+        service = created.service
+        mockProbe(created.probe)
 
         mockParserReturn(service, [
           stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),

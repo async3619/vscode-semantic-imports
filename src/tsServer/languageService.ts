@@ -1,3 +1,4 @@
+import { injectable } from 'inversify'
 import * as vscode from 'vscode'
 
 export interface DefinitionResult {
@@ -20,6 +21,7 @@ interface QuickInfoResponse {
   body?: QuickInfoBody
 }
 
+@injectable()
 export class TypeScriptLanguageService {
   async getDefinition(uri: vscode.Uri, position: vscode.Position): Promise<DefinitionResult | null> {
     const definitions = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(

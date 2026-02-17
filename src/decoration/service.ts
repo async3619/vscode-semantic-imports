@@ -1,10 +1,13 @@
+import { inject, injectable } from 'inversify'
 import * as vscode from 'vscode'
+import { TOKENS } from '@/di/tokens'
 import { TypeScriptParser } from '@/parser'
 import type { SymbolKind } from '@/symbol'
 import { Logger } from '@/logger'
 import type { SymbolColorMap } from '@/theme'
 import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/tsServer'
 import { SymbolResolver } from './resolver'
+import type { ResolveTarget } from './resolver'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
 interface DecorationContext {
@@ -12,20 +15,25 @@ interface DecorationContext {
   importSectionText: string
 }
 
+export type SymbolResolverFactory = (
+  document: vscode.TextDocument,
+  targets: Map<string, ResolveTarget>,
+  languageService: TypeScriptLanguageService,
+) => SymbolResolver
+
+@injectable()
 export class DecorationService implements vscode.Disposable {
   private readonly logger = Logger.create(DecorationService)
-  private readonly languageService: TypeScriptLanguageService
-  private readonly probe: TypeScriptServerProbe
   private readonly decorationTypes = new Map<string, vscode.TextEditorDecorationType>()
   private readonly documentCaches = new Map<string, DocumentCache>()
-  private readonly parser = new TypeScriptParser()
-  private colors: SymbolColorMap
+  private colors: SymbolColorMap = {}
 
-  constructor(colors: SymbolColorMap = {}, languageService?: TypeScriptLanguageService) {
-    this.colors = colors
-    this.languageService = languageService ?? new TypeScriptLanguageService()
-    this.probe = new TypeScriptServerProbe(this.languageService)
-  }
+  constructor(
+    private readonly languageService: TypeScriptLanguageService,
+    private readonly probe: TypeScriptServerProbe,
+    private readonly parser: TypeScriptParser,
+    @inject(TOKENS.SymbolResolverFactory) private readonly createSymbolResolver: SymbolResolverFactory,
+  ) {}
 
   setColors(colors: SymbolColorMap) {
     this.colors = colors
@@ -63,7 +71,7 @@ export class DecorationService implements vscode.Disposable {
       return
     }
 
-    const resolver = new SymbolResolver(document, targetsToResolve, this.languageService)
+    const resolver = this.createSymbolResolver(document, targetsToResolve, this.languageService)
     resolver.onPhase((phaseKinds) => {
       for (const [symbol, kind] of phaseKinds) {
         symbolKinds.set(symbol, kind)
