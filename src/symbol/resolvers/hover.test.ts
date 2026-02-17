@@ -6,7 +6,7 @@ import { SymbolKind } from '@/symbol/types'
 import { loadTypeScript } from '@/symbol/utils/loadTypeScript'
 import type { TypeScriptLanguageService } from '@/tsServer'
 
-vi.mock('../utils/loadTypeScript', () => ({
+vi.mock('@/symbol/utils/loadTypeScript', () => ({
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   loadTypeScript: vi.fn(() => require('typescript')),
 }))
