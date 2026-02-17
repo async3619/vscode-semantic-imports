@@ -1,7 +1,6 @@
 import { injectable } from 'inversify'
 import * as vscode from 'vscode'
 import { Logger } from '@/logger'
-import { isJavaScriptFile } from '@/utils/isJavaScriptFile'
 import { TypeScriptLanguageService } from './languageService'
 
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -90,33 +89,7 @@ export class TypeScriptServerProbe implements vscode.Disposable {
       return false
     }
 
-    if (definition.targetUri.scheme !== 'file') {
-      return true
-    }
-
-    if (isJavaScriptFile(definition.targetUri.fsPath)) {
-      this.logger.debug('probe: skipping quickinfo for JS target:', definition.targetUri.fsPath)
-      return true
-    }
-
-    try {
-      const body = await this.languageService.requestQuickInfo(
-        definition.targetUri.fsPath,
-        definition.targetRange.start.line + 1,
-        definition.targetRange.start.character + 1,
-      )
-
-      if (body?.kind) {
-        return true
-      }
-
-      this.logger.debug('probe: quickinfo returned empty body')
-      return false
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.logger.debug('probe: quickinfo error:', message)
-      return false
-    }
+    return true
   }
 
   private delay(ms: number, signal: AbortSignal) {
