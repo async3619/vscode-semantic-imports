@@ -200,6 +200,19 @@ describe('PluginSymbolResolver', () => {
     expect(languageService.requestCompletionInfo).toHaveBeenCalledWith('/def.ts', 6, 5, { id: 'resolve' })
   })
 
+  it.each([
+    ['file:///node_modules/pkg/index.js', '.js'],
+    ['file:///node_modules/pkg/index.mjs', '.mjs'],
+    ['file:///node_modules/pkg/index.cjs', '.cjs'],
+  ])('should return undefined for JS target %s without calling completionInfo', async (uri) => {
+    vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult(uri))
+
+    const result = await resolver.resolve(createMockDocument(), createMockPosition())
+
+    expect(result).toBeUndefined()
+    expect(languageService.requestCompletionInfo).not.toHaveBeenCalled()
+  })
+
   it('should return undefined when definition target is not a file URI', async () => {
     vi.mocked(languageService.getDefinition).mockResolvedValue(createDefinitionResult('git:///def.ts'))
 

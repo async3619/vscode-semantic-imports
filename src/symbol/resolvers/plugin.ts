@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import { RESPONSE_KEY, type PluginResponse } from '@/typescript/plugin/protocol'
 import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
 import { SymbolKind, BaseSymbolResolver } from '@/symbol/types'
+import { isJavaScriptFile } from '@/utils/isJavaScriptFile'
 
 export class PluginSymbolResolver extends BaseSymbolResolver {
   readonly name = 'plugin'
@@ -13,6 +14,11 @@ export class PluginSymbolResolver extends BaseSymbolResolver {
     }
 
     if (definition.targetUri.scheme !== 'file') {
+      return undefined
+    }
+
+    if (isJavaScriptFile(definition.targetUri.fsPath)) {
+      this.logger.debug('skipping completionInfo for JS target:', definition.targetUri.fsPath)
       return undefined
     }
 
