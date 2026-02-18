@@ -14,6 +14,16 @@ export enum SymbolKind {
   Variable = 'variable',
 }
 
+export const SymbolConfidence: Record<SymbolKind, number> = {
+  [SymbolKind.Function]: 0.9,
+  [SymbolKind.Class]: 0.9,
+  [SymbolKind.Interface]: 0.8,
+  [SymbolKind.Type]: 0.8,
+  [SymbolKind.Enum]: 0.8,
+  [SymbolKind.Namespace]: 0.7,
+  [SymbolKind.Variable]: 0.5,
+}
+
 export abstract class BaseSymbolResolver {
   abstract readonly name: string
   protected readonly logger: Logger

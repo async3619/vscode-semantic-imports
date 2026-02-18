@@ -3,7 +3,7 @@ import * as vscode from 'vscode'
 import { TOKENS } from '@/di/tokens'
 import { Logger } from '@/logger'
 import { TypeScriptParser } from '@/parser'
-import type { SymbolKind } from '@/symbol'
+import { SymbolConfidence, type SymbolKind } from '@/symbol'
 import type { SymbolColorMap } from '@/theme'
 import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/typescript/language'
 import type { ResolveTarget } from './resolver'
@@ -82,7 +82,10 @@ export class DecorationService implements vscode.Disposable {
         return
       }
       for (const [symbol, kind] of phaseKinds) {
-        symbolKinds.set(symbol, kind)
+        const existing = symbolKinds.get(symbol)
+        if (!existing || SymbolConfidence[kind] >= SymbolConfidence[existing]) {
+          symbolKinds.set(symbol, kind)
+        }
       }
       this.applyDecorationsToEditor(editor, context.occurrences, symbolKinds)
     })
@@ -94,7 +97,10 @@ export class DecorationService implements vscode.Disposable {
     }
 
     for (const [symbol, kind] of resolved) {
-      symbolKinds.set(symbol, kind)
+      const existing = symbolKinds.get(symbol)
+      if (!existing || SymbolConfidence[kind] >= SymbolConfidence[existing]) {
+        symbolKinds.set(symbol, kind)
+      }
     }
 
     const unresolved = [...targetsToResolve.keys()].filter((s) => !symbolKinds.has(s))

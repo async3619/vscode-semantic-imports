@@ -295,20 +295,19 @@ describe('DecorationService', () => {
         })
       })
 
-      it('should use semanticToken as fallback only when hover returns undefined', async () => {
+      it('should use higher confidence result when multiple resolvers return different kinds', async () => {
         mockParserReturn(service, [
-          stmt({ localName: 'resolved', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
-          stmt({ localName: 'unresolved', startLine: 0, startColumn: 19, endLine: 0, endColumn: 29 }),
+          stmt({ localName: 'mySymbol', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
         ])
-        spyResolve(HoverSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
-          return pos.character === 9 ? SymbolKind.Function : undefined
-        })
         spyResolve(SemanticTokenSymbolResolver.prototype).mockResolvedValue(SymbolKind.Variable)
+        spyResolve(HoverSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
 
-        const editor = createMockEditor(["import { resolved, unresolved } from 'mod'"])
+        const editor = createMockEditor(["import { mySymbol } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        expect(SemanticTokenSymbolResolver.prototype.resolve).toHaveBeenCalledTimes(1)
+        expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
+          color: TEST_COLORS[SymbolKind.Function],
+        })
       })
     })
 
@@ -794,8 +793,8 @@ describe('DecorationService', () => {
           stmt({ localName: 'MyClass', startLine: 0, startColumn: 15, endLine: 0, endColumn: 22 }),
         ])
 
-        spyResolve(PluginSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
-          return pos.character === 9 ? SymbolKind.Function : undefined
+        spyResolve(SemanticTokenSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
+          return pos.character === 9 ? SymbolKind.Variable : undefined
         })
 
         let resolveHover!: (value: SymbolKind | undefined) => void
@@ -821,35 +820,32 @@ describe('DecorationService', () => {
         expect(decoratedAfter.length).toBeGreaterThan(decoratedBefore.length)
       })
 
-      it('should not call semanticToken for symbols already resolved by hover', async () => {
+      it('should run all resolvers for every symbol regardless of prior results', async () => {
         mockParserReturn(service, [
           stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
         ])
+        const semanticSpy = spyResolve(SemanticTokenSymbolResolver.prototype).mockResolvedValue(SymbolKind.Variable)
         spyResolve(HoverSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
-        const semanticSpy = spyResolve(SemanticTokenSymbolResolver.prototype)
 
         const editor = createMockEditor(["import { myFn } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        expect(semanticSpy).not.toHaveBeenCalled()
+        expect(semanticSpy).toHaveBeenCalledTimes(1)
       })
 
-      it('should call semanticToken only for symbols unresolved after hover', async () => {
+      it('should not downgrade confidence when a later resolver returns lower confidence kind', async () => {
         mockParserReturn(service, [
-          stmt({ localName: 'resolved', startLine: 0, startColumn: 9, endLine: 0, endColumn: 17 }),
-          stmt({ localName: 'unresolved', startLine: 0, startColumn: 19, endLine: 0, endColumn: 29 }),
+          stmt({ localName: 'myFn', startLine: 0, startColumn: 9, endLine: 0, endColumn: 13 }),
         ])
-        spyResolve(HoverSymbolResolver.prototype).mockImplementation(async (_doc, pos) => {
-          return pos.character === 9 ? SymbolKind.Function : undefined
-        })
-        const semanticSpy = vi
-          .spyOn(SemanticTokenSymbolResolver.prototype, 'resolve')
-          .mockResolvedValue(SymbolKind.Variable)
+        spyResolve(SemanticTokenSymbolResolver.prototype).mockResolvedValue(SymbolKind.Function)
+        spyResolve(HoverSymbolResolver.prototype).mockResolvedValue(SymbolKind.Variable)
 
-        const editor = createMockEditor(["import { resolved, unresolved } from 'mod'"])
+        const editor = createMockEditor(["import { myFn } from 'mod'"])
         await service.applyImportDecorations(editor)
 
-        expect(semanticSpy).toHaveBeenCalledTimes(1)
+        expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith({
+          color: TEST_COLORS[SymbolKind.Function],
+        })
       })
     })
   })
