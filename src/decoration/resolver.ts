@@ -24,8 +24,8 @@ export interface ResolveTarget {
 export class SymbolResolver {
   private readonly logger = Logger.create(SymbolResolver)
   private readonly resolvers: BaseSymbolResolver[]
-  private readonly _onPhase = new vscode.EventEmitter<Map<string, SymbolKind>>()
-  readonly onPhase = this._onPhase.event
+  private readonly _onResult = new vscode.EventEmitter<Map<string, SymbolKind>>()
+  readonly onResult = this._onResult.event
 
   constructor(
     private readonly document: vscode.TextDocument,
@@ -45,11 +45,11 @@ export class SymbolResolver {
     for (const resolver of this.resolvers) {
       const resolved = await this.resolveSymbols(resolver, allSymbols)
       if (resolved.size > 0) {
-        this._onPhase.fire(resolved)
+        this._onResult.fire(resolved)
       }
     }
 
-    this._onPhase.dispose()
+    this._onResult.dispose()
   }
 
   private async resolveSymbols(resolver: BaseSymbolResolver, symbols: string[]) {

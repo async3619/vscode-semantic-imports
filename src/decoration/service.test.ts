@@ -681,7 +681,7 @@ describe('DecorationService', () => {
         expect(cacheAfterFirst!.symbolKinds.get('useState')).toBe(SymbolKind.Class)
       })
 
-      it('should ignore stale onPhase events', async () => {
+      it('should ignore stale onResult events', async () => {
         vi.useRealTimers()
 
         mockParserReturn(service, [
@@ -710,7 +710,7 @@ describe('DecorationService', () => {
         const second = service.applyImportDecorations(editor)
         await second
 
-        // First resolver's onPhase fires — should be ignored
+        // First resolver's onResult fires — should be ignored
         vi.mocked(editor.setDecorations).mockClear()
         resolvePlugin(SymbolKind.Function)
         await first

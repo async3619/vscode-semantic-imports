@@ -77,7 +77,7 @@ export class DecorationService implements vscode.Disposable {
 
     const isStale = () => this.activeResolvers.get(docUri) !== resolver
 
-    resolver.onPhase((phaseKinds) => {
+    resolver.onResult((phaseKinds) => {
       if (isStale()) {
         return
       }
