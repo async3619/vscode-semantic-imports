@@ -40,21 +40,16 @@ export class SymbolResolver {
   }
 
   async resolve() {
-    const symbolKinds = new Map<string, SymbolKind>()
     const allSymbols = [...this.targets.keys()]
 
     for (const resolver of this.resolvers) {
       const resolved = await this.resolveSymbols(resolver, allSymbols)
       if (resolved.size > 0) {
-        for (const [symbol, kind] of resolved) {
-          symbolKinds.set(symbol, kind)
-        }
-        this._onPhase.fire(symbolKinds)
+        this._onPhase.fire(resolved)
       }
     }
 
     this._onPhase.dispose()
-    return symbolKinds
   }
 
   private async resolveSymbols(resolver: BaseSymbolResolver, symbols: string[]) {

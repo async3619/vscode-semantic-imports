@@ -94,13 +94,11 @@ export class DecorationService implements vscode.Disposable {
       this.applyDecorationsToEditor(editor, context.occurrences, symbolKinds)
     })
 
-    const resolved = await resolver.resolve()
+    await resolver.resolve()
 
     if (isStale()) {
       return
     }
-
-    mergeByConfidence(resolved)
 
     const unresolved = [...targetsToResolve.keys()].filter((s) => !symbolKinds.has(s))
     if (unresolved.length > 0) {
