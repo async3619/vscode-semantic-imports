@@ -77,20 +77,16 @@ export class DecorationService implements vscode.Disposable {
 
     const isStale = () => this.activeResolvers.get(docUri) !== resolver
 
-    const mergeByConfidence = (results: Map<string, SymbolKind>) => {
-      for (const [symbol, kind] of results) {
+    resolver.onPhase((phaseKinds) => {
+      if (isStale()) {
+        return
+      }
+      for (const [symbol, kind] of phaseKinds) {
         const existing = symbolKinds.get(symbol)
         if (!existing || SymbolConfidence[kind] >= SymbolConfidence[existing]) {
           symbolKinds.set(symbol, kind)
         }
       }
-    }
-
-    resolver.onPhase((phaseKinds) => {
-      if (isStale()) {
-        return
-      }
-      mergeByConfidence(phaseKinds)
       this.applyDecorationsToEditor(editor, context.occurrences, symbolKinds)
     })
 
