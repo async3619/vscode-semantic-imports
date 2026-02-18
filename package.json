@@ -36,9 +36,9 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "lint": "eslint",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\"",
+    "lint": "biome check src/",
+    "format": "biome format --write src/",
+    "format:check": "biome format src/",
     "test": "vitest run",
     "test:watch": "vitest",
     "package": "pnpm run build && vsce package --no-dependencies",

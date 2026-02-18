@@ -1,4 +1,3 @@
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyFunction = (...args: any[]) => void
 
 export type DebouncedFunction<T extends AnyFunction> = ((...args: Parameters<T>) => void) & {
