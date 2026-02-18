@@ -1,15 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { DecorationService } from './service'
-import type { SymbolResolverFactory } from './service'
-import { SymbolResolver } from './resolver'
-import type { DocumentCache } from './types'
-import { SymbolKind, TypeScriptServerNotLoadedError } from '@/symbol'
-import { HoverSymbolResolver, PluginSymbolResolver, SemanticTokenSymbolResolver } from '@/symbol'
-import type { SymbolColorMap } from '@/theme'
-import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/typescript/language'
 import type { ImportStatement } from '@/parser'
 import { TypeScriptParser } from '@/parser'
+import {
+  HoverSymbolResolver,
+  PluginSymbolResolver,
+  SemanticTokenSymbolResolver,
+  SymbolKind,
+  TypeScriptServerNotLoadedError,
+} from '@/symbol'
+import type { SymbolColorMap } from '@/theme'
+import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/typescript/language'
+import { SymbolResolver } from './resolver'
+import type { SymbolResolverFactory } from './service'
+import { DecorationService } from './service'
+import type { DocumentCache } from './types'
 
 type ServiceInternals = {
   languageService: TypeScriptLanguageService

@@ -1,5 +1,5 @@
 import type tslib from 'typescript/lib/tsserverlibrary'
-import { RESPONSE_KEY, type PluginRequest, type PluginResponse } from './protocol'
+import { type PluginRequest, type PluginResponse, RESPONSE_KEY } from './protocol'
 
 type TypeScript = typeof tslib
 

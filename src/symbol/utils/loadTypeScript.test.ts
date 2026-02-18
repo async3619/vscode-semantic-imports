@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
-import { loadTypeScript, _resetTypeScriptCache } from './loadTypeScript'
+import { _resetTypeScriptCache, loadTypeScript } from './loadTypeScript'
 
 describe('loadTypeScript', () => {
   beforeEach(() => {

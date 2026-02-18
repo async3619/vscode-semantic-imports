@@ -1,13 +1,13 @@
 import { inject, injectable } from 'inversify'
 import * as vscode from 'vscode'
 import { TOKENS } from '@/di/tokens'
+import { Logger } from '@/logger'
 import { TypeScriptParser } from '@/parser'
 import type { SymbolKind } from '@/symbol'
-import { Logger } from '@/logger'
 import type { SymbolColorMap } from '@/theme'
 import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/typescript/language'
-import { SymbolResolver } from './resolver'
 import type { ResolveTarget } from './resolver'
+import { SymbolResolver } from './resolver'
 import type { DocumentCache, SymbolOccurrence } from './types'
 
 interface DecorationContext {
