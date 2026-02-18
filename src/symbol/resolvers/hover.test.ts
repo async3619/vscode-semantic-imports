@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
-import { HoverSymbolResolver } from './hover'
 import { SymbolKind } from '@/symbol/types'
 import { loadTypeScript } from '@/symbol/utils/loadTypeScript'
 import type { TypeScriptLanguageService } from '@/typescript/language'
+import { HoverSymbolResolver } from './hover'
 
 vi.mock('@/symbol/utils/loadTypeScript', () => ({
   loadTypeScript: vi.fn(() => require('typescript')),

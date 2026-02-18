@@ -1,9 +1,6 @@
 import PQueue from 'p-queue'
 import * as vscode from 'vscode'
 import { Logger } from '@/logger'
-import type { TypeScriptLanguageService } from '@/typescript/language'
-import { stopwatch } from '@/utils/stopwatch'
-import { withRetry } from '@/utils/retry'
 import type { BaseSymbolResolver, SymbolKind } from '@/symbol'
 import {
   HoverSymbolResolver,
@@ -11,6 +8,9 @@ import {
   SemanticTokenSymbolResolver,
   TypeScriptServerNotLoadedError,
 } from '@/symbol'
+import type { TypeScriptLanguageService } from '@/typescript/language'
+import { withRetry } from '@/utils/retry'
+import { stopwatch } from '@/utils/stopwatch'
 
 const CONCURRENCY_LIMIT = 5
 const RETRY_DELAY_MS = 500

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { SymbolKind } from '@/symbol'
 import type { TokenColorRule } from '@/theme/types'
 import { findTextMateColor } from './findTextMateColor'

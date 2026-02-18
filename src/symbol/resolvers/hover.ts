@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import { TypeScriptServerNotLoadedError } from '@/symbol/errors'
-import { SymbolKind, BaseSymbolResolver } from '@/symbol/types'
+import { BaseSymbolResolver, SymbolKind } from '@/symbol/types'
 import { extractContentText } from '@/symbol/utils/extractContentText'
 import { isFunctionType } from '@/symbol/utils/isFunctionType'
 import { loadTypeScript } from '@/symbol/utils/loadTypeScript'

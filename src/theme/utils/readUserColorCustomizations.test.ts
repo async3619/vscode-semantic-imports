@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { SymbolKind } from '@/symbol'
 import { readUserColorCustomizations } from './readUserColorCustomizations'
