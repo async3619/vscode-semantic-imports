@@ -1,9 +1,6 @@
 import PQueue from 'p-queue'
 import * as vscode from 'vscode'
 import { Logger } from '@/logger'
-import type { TypeScriptLanguageService } from '@/typescript/language'
-import { stopwatch } from '@/utils/stopwatch'
-import { withRetry } from '@/utils/retry'
 import type { BaseSymbolResolver, SymbolKind } from '@/symbol'
 import {
   HoverSymbolResolver,
@@ -11,6 +8,9 @@ import {
   SemanticTokenSymbolResolver,
   TypeScriptServerNotLoadedError,
 } from '@/symbol'
+import type { TypeScriptLanguageService } from '@/typescript/language'
+import { withRetry } from '@/utils/retry'
+import { stopwatch } from '@/utils/stopwatch'
 
 const CONCURRENCY_LIMIT = 5
 const RETRY_DELAY_MS = 500
@@ -24,8 +24,8 @@ export interface ResolveTarget {
 export class SymbolResolver {
   private readonly logger = Logger.create(SymbolResolver)
   private readonly resolvers: BaseSymbolResolver[]
-  private readonly _onPhase = new vscode.EventEmitter<Map<string, SymbolKind>>()
-  readonly onPhase = this._onPhase.event
+  private readonly _onResult = new vscode.EventEmitter<Map<string, SymbolKind>>()
+  readonly onResult = this._onResult.event
 
   constructor(
     private readonly document: vscode.TextDocument,
@@ -33,33 +33,23 @@ export class SymbolResolver {
     languageService: TypeScriptLanguageService,
   ) {
     this.resolvers = [
-      new PluginSymbolResolver(languageService),
-      new HoverSymbolResolver(languageService),
       new SemanticTokenSymbolResolver(languageService),
+      new HoverSymbolResolver(languageService),
+      new PluginSymbolResolver(languageService),
     ]
   }
 
   async resolve() {
-    const symbolKinds = new Map<string, SymbolKind>()
+    const allSymbols = [...this.targets.keys()]
 
     for (const resolver of this.resolvers) {
-      const remaining = [...this.targets.keys()].filter((s) => !symbolKinds.has(s))
-      if (remaining.length === 0) {
-        continue
-      }
-
-      const resolved = await this.resolveSymbols(resolver, remaining)
-      for (const [symbol, kind] of resolved) {
-        symbolKinds.set(symbol, kind)
-      }
-
+      const resolved = await this.resolveSymbols(resolver, allSymbols)
       if (resolved.size > 0) {
-        this._onPhase.fire(symbolKinds)
+        this._onResult.fire(resolved)
       }
     }
 
-    this._onPhase.dispose()
-    return symbolKinds
+    this._onResult.dispose()
   }
 
   private async resolveSymbols(resolver: BaseSymbolResolver, symbols: string[]) {

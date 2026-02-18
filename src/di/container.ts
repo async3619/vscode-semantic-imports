@@ -1,13 +1,12 @@
 import 'reflect-metadata'
 import { Container } from 'inversify'
-import { TOKENS } from './tokens'
-import { TypeScriptLanguageService } from '@/typescript/language'
-import { TypeScriptServerProbe } from '@/typescript/language'
+import { DecorationService } from '@/decoration'
+import { SymbolResolver } from '@/decoration/resolver'
+import type { SymbolResolverFactory } from '@/decoration/service'
 import { TypeScriptParser } from '@/parser'
 import { ThemeColorResolver } from '@/theme'
-import { DecorationService } from '@/decoration'
-import type { SymbolResolverFactory } from '@/decoration/service'
-import { SymbolResolver } from '@/decoration/resolver'
+import { TypeScriptLanguageService, TypeScriptServerProbe } from '@/typescript/language'
+import { TOKENS } from './tokens'
 
 export function createContainer(): Container {
   const container = new Container()

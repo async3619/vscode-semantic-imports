@@ -1,9 +1,9 @@
 import 'reflect-metadata'
 import * as vscode from 'vscode'
-import { createContainer } from './di'
 import { DecorationService } from './decoration'
-import { ThemeColorResolver } from './theme'
+import { createContainer } from './di'
 import { Logger } from './logger'
+import { ThemeColorResolver } from './theme'
 import { debounce } from './utils/debounce'
 
 const SUPPORTED_LANGUAGES = new Set(['typescript', 'typescriptreact'])

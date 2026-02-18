@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
+import type { DefinitionResult, TypeScriptLanguageService } from './languageService'
 import { TypeScriptServerProbe } from './probe'
-import type { TypeScriptLanguageService, DefinitionResult } from './languageService'
 
 function createMockDocument(uri = 'file:///test.ts') {
   return { uri: vscode.Uri.parse(uri) } as unknown as vscode.TextDocument

@@ -29,7 +29,6 @@ export class Logger {
     Logger.output = undefined
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static create<T extends (abstract new (...args: any[]) => any) | ((...args: any[]) => any)>(target: T) {
     return new Logger(target.name)
   }

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
 import type tslib from 'typescript/lib/tsserverlibrary'
+import { describe, expect, it, vi } from 'vitest'
 import init from './index'
-import { RESPONSE_KEY, type PluginResponse, type ResolveResponse } from './protocol'
+import { type PluginResponse, RESPONSE_KEY, type ResolveResponse } from './protocol'
 
 const SymbolFlags = {
   Function: 1 << 4,

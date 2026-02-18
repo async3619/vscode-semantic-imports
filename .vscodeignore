@@ -11,8 +11,7 @@ CLAUDE.md
 tsconfig.json
 vitest.config.ts
 esbuild.mjs
-eslint.config.mjs
-.prettierrc
+biome.json
 **/*.test.ts
 **/*.map
 codecov*

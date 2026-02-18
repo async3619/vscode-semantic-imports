@@ -1,5 +1,5 @@
-import * as vscode from 'vscode'
 import * as path from 'path'
+import * as vscode from 'vscode'
 
 type TypeScript = typeof import('typescript')
 
@@ -19,7 +19,6 @@ export function loadTypeScript(): TypeScript | undefined {
 
   try {
     const tsPath = path.join(path.dirname(tsExt.extensionPath), 'node_modules', 'typescript')
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     cached = require(tsPath) as TypeScript
   } catch {
     // Failed to load TypeScript from VS Code built-in

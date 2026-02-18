@@ -2,8 +2,8 @@ import { injectable } from 'inversify'
 import * as vscode from 'vscode'
 import { Logger } from '@/logger'
 import type { SymbolColorMap } from './types'
-import { parseThemeFile } from './utils/parseThemeFile'
 import { extractSymbolColors } from './utils/extractSymbolColors'
+import { parseThemeFile } from './utils/parseThemeFile'
 import { readUserColorCustomizations } from './utils/readUserColorCustomizations'
 
 interface ThemeContribution {
